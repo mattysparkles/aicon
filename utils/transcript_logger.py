@@ -35,7 +35,13 @@ def log_transcript(caller: str, question: str, reply: str) -> str:
         "reply": reply,
     }
 
-    path = os.path.join(transcript_dir, f"{timestamp}.json")
+    safe_caller = (
+        caller.replace("+", "")
+        .replace(" ", "")
+        .replace(":", "")
+        .replace("/", "")
+    )
+    path = os.path.join(transcript_dir, f"{timestamp}_{safe_caller}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
