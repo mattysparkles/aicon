@@ -5,15 +5,17 @@ import logging
 from typing import List
 
 import openai
+from openai.error import OpenAIError
 
-openai.api_key = os.environ.get("OPENAI_API_KEY")
 logger = logging.getLogger(__name__)
 
 
 def chat_completion(messages: List[dict], model: str = "gpt-4o-mini") -> str:
     """Send messages to OpenAI ChatCompletion."""
-    if not openai.api_key:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
+    openai.api_key = api_key
     resp = openai.ChatCompletion.create(model=model, messages=messages)
     return resp["choices"][0]["message"]["content"]
 
@@ -32,18 +34,20 @@ def get_gpt_response(prompt: str) -> str:
         The assistant's textual reply.
     """
 
-    if not openai.api_key:
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
+    openai.api_key = api_key
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
         )
-    except openai.error.OpenAIError as exc:
+    except OpenAIError as exc:
         logger.error("OpenAI API error: %s", exc)
         raise
-    except Exception as exc:  # pragma: no cover - unexpected errors
+    except Exception:  # pragma: no cover - unexpected errors
         logger.exception("Unexpected error when calling OpenAI API")
         raise
 
