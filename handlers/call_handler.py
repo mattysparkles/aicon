@@ -1,10 +1,13 @@
 """Flask routes for handling Twilio voice calls."""
 
 import os
+from urllib.parse import urljoin
+
 from flask import Response, request
 from twilio.twiml.voice_response import VoiceResponse
 
-from . import email, gpt_agent, sms, ssh
+from . import email, gpt_agent, sms, ssh, tts
+from utils.transcript_logger import log_transcript
 
 
 def init_app(app):
@@ -50,7 +53,15 @@ def init_app(app):
                 command=reply[4:].strip(),
             )
 
+        log_transcript(
+            caller=request.form.get("From", "unknown"),
+            question=speech_text,
+            reply=reply,
+        )
+        audio_path = tts.generate_sparkles_voice(reply)
+        audio_url = urljoin(request.host_url, audio_path)
+
         vr = VoiceResponse()
-        vr.say(reply, voice="Polly.Joanna")
+        vr.play(audio_url)
         vr.hangup()
         return Response(str(vr), mimetype="text/xml")
