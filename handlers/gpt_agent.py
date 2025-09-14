@@ -5,7 +5,7 @@ import logging
 from typing import List
 
 import openai
-from openai.error import OpenAIError
+from openai import OpenAIError
 
 logger = logging.getLogger(__name__)
 
