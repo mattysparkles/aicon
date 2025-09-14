@@ -6,7 +6,7 @@ A cloud-based voice-to-AI call assistant built with Flask. It receives phone cal
 - **Voice Calls** via Twilio webhooks
 - **Transcription** using OpenAI Whisper
 - **Conversational AI** with the OpenAI Chat API
-- **Text‑to‑Speech** for responses
+- **Text‑to‑Speech** for responses using Twilio's `Polly.Joanna` voice
 - **SMS and Email** helpers for outbound messages
 - **Optional SSH** command execution with safety checks
 

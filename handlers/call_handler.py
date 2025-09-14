@@ -20,7 +20,10 @@ def init_app(app):
                 action="/voice",
                 method="POST",
             )
-            gather.say("Welcome to the AI assistant. Please speak after the tone.")
+            gather.say(
+                "Welcome to the AI assistant. Please speak after the tone.",
+                voice="Polly.Joanna",
+            )
             return Response(str(vr), mimetype="text/xml")
 
         reply = gpt_agent.chat_completion(
@@ -48,6 +51,6 @@ def init_app(app):
             )
 
         vr = VoiceResponse()
-        vr.say(reply)
+        vr.say(reply, voice="Polly.Joanna")
         vr.hangup()
         return Response(str(vr), mimetype="text/xml")
