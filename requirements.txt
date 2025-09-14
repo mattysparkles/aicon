@@ -1,0 +1,8 @@
+Flask
+openai
+openai-whisper
+python-dotenv
+twilio
+sendgrid
+paramiko
+requests
