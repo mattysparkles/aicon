@@ -1,4 +1,5 @@
 <Response>
-    <Say>Welcome to the AI assistant. Please speak after the tone.</Say>
-    <Record maxLength="60" action="/transcribe" playBeep="true"/>
+    <Gather input="speech" action="/voice" method="POST">
+        <Say>Welcome to the AI assistant. Please speak after the tone.</Say>
+    </Gather>
 </Response>
