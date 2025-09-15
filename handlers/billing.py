@@ -10,6 +10,8 @@ from flask import Blueprint, Response, jsonify, request
 
 from utils.db import db_session
 from utils.models import Payment, Referral, Affiliate, Facility, User
+from utils.models import UserPreference
+from datetime import datetime, timedelta
 
 bp = Blueprint("billing", __name__)
 
@@ -83,21 +85,57 @@ def checkout_link() -> Response:
 
 
 def credit_affiliate(phone: str, amount_cents: int, affiliate_code: Optional[str]) -> None:
+    """Credit commissions for a payment: 5% to referrer and 1% override to parent for up to 60 months.
+
+    - $10 signup bonus handled at signup time.
+    - Window is 60 months (approx 60*30 days) from first referral record per referred phone.
+    """
     if not affiliate_code:
         return
     with db_session() as s:
         aff = s.query(Affiliate).filter(Affiliate.code == affiliate_code).first()
         if not aff:
             return
-        commission_cents = amount_cents * aff.commission_rate_bps // 10000
-        s.add(
-            Referral(
-                affiliate_id=aff.id,
-                referred_phone=phone,
-                amount_cents=amount_cents,
-                commission_cents=commission_cents,
-            )
+        # Determine first referral timestamp for the referred phone
+        first = (
+            s.query(Referral)
+            .filter(Referral.affiliate_id == aff.id, Referral.referred_phone == phone)
+            .order_by(Referral.created_at.asc())
+            .first()
         )
+        now = datetime.utcnow()
+        window_days = int(os.environ.get("AFFILIATE_WINDOW_DAYS", str(60*30)))
+        if first and first.created_at and first.created_at < now - timedelta(days=window_days):
+            # Outside commission window
+            return
+        # 5% to direct affiliate
+        commission_cents = int(round(amount_cents * 0.05))
+        if commission_cents:
+            s.add(Referral(affiliate_id=aff.id, referred_phone=phone, amount_cents=amount_cents, commission_cents=commission_cents))
+        # 1% override to parent affiliate (if linked)
+        try:
+            parent_code_pref = (
+                s.query(UserPreference)
+                .filter(UserPreference.user_id == aff.owner_phone, UserPreference.key == "parent_affiliate_code")
+                .first()
+            )
+            parent_code = getattr(parent_code_pref, "value", None)
+            if parent_code and parent_code != affiliate_code:
+                parent = s.query(Affiliate).filter(Affiliate.code == parent_code).first()
+                if parent:
+                    # Check same 60-month window for parent record
+                    p_first = (
+                        s.query(Referral)
+                        .filter(Referral.affiliate_id == parent.id, Referral.referred_phone == phone)
+                        .order_by(Referral.created_at.asc())
+                        .first()
+                    )
+                    if not (p_first and p_first.created_at and p_first.created_at < now - timedelta(days=window_days)):
+                        override_cents = int(round(amount_cents * 0.01))
+                        if override_cents:
+                            s.add(Referral(affiliate_id=parent.id, referred_phone=phone, amount_cents=amount_cents, commission_cents=override_cents))
+        except Exception:
+            pass
 
 
 def init_app(app) -> None:

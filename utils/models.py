@@ -99,6 +99,38 @@ class Payment(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(64), unique=True, nullable=False)
+    price_id = Column(String(128), nullable=True)  # Stripe price ID
+    description = Column(Text, nullable=True)
+    active = Column(String(8), default="true", nullable=False)  # "true" or "false"
+    discount_coupon = Column(String(64), nullable=True)  # Stripe coupon id/code
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Payout(Base):
+    __tablename__ = "payouts"
+
+    id = Column(Integer, primary_key=True)
+    affiliate_id = Column(Integer, nullable=False)
+    amount_cents = Column(Integer, nullable=False)
+    wallet_address = Column(String(256), nullable=True)
+    status = Column(String(32), default="pending", nullable=False)  # pending|approved|paid|rejected
+    method = Column(String(32), nullable=True)  # paypal|crypto|commissary
+    tx_id = Column(String(128), nullable=True)
+    custodian_name = Column(String(128), nullable=True)
+    custodian_email = Column(String(128), nullable=True)
+    custodian_phone = Column(String(64), nullable=True)
+    vault_mode = Column(String(8), default="false", nullable=False)  # "true" or "false"
+    release_at = Column(DateTime, nullable=True)
+    invest_destination = Column(String(32), nullable=True)  # none|robinhood|acorns
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class ConversationState(Base):
     __tablename__ = "conversation_state"
 

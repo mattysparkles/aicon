@@ -14,7 +14,7 @@
       <label>Phone (E.164): <input name="phone" placeholder="+15551234567" required /></label>
       <label>Full name: <input name="name" /></label>
       <label>Prison ID: <input name="prison_id" /></label>
-      <label>Affiliate code: <input name="affiliate_code" /></label>
+      <label>Affiliate code: <input name="affiliate_code" value="{{ affiliate_code or '' }}" /></label>
       <label>Plan:
         <select name="plan">
           <option value="basic">Basic</option>
@@ -27,4 +27,3 @@
   </section>
 </body>
 </html>
-

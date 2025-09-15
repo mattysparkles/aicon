@@ -6,7 +6,7 @@ A cloud-based voice-to-AI call assistant built with Flask. It receives phone cal
 - **Voice Calls** via Twilio webhooks
 - **Transcription** using OpenAI Whisper
 - **Conversational AI** with the OpenAI Chat API
-- **Text‑to‑Speech** with ElevenLabs (custom voice) for greeting and replies, with Twilio Polly fallback
+- **Text‑to‑Speech** with ElevenLabs (custom voice) for greeting and replies, with OpenAI TTS fallback
 - **SMS and Email** helpers for outbound messages
 - **Optional SSH** command execution with safety checks
 
@@ -62,7 +62,7 @@ The application uses the following variables:
 - `SSH_HOST`, `SSH_USER`, `SSH_KEY_PATH`, `SSH_ALLOWED_HOSTS`
 
 Notes:
-- If `ELEVENLABS_API_KEY` and a voice are set (either `ELEVENLABS_VOICE_ID` or via `VOICE_MAP`/SMS keyword), the app generates and plays TTS using ElevenLabs. Otherwise, it falls back to Twilio Polly.
+- If `ELEVENLABS_API_KEY` and a voice are set (either `ELEVENLABS_VOICE_ID` or via `VOICE_MAP`/SMS keyword), the app generates and plays TTS using ElevenLabs. Otherwise, it falls back to OpenAI TTS, and only as a last resort uses Twilio's default `<Say>` voice.
 - Set `GREETING_TEXT` to override the first rotating greeting option.
 
 ## Unified Webhook, Dynamic Greeting, Logging, and Voice Management

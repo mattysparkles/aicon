@@ -8,11 +8,25 @@ from datetime import datetime
 
 from flask import request
 
+import os
 from utils.db import db_session
 from utils.models import ConversationState, User
 
 
 FLOW = "onboard"
+
+
+def _onboarding_intro() -> str:
+    long_greeting = os.environ.get("ONBOARDING_GREETING_TEXT")
+    if long_greeting:
+        base = long_greeting.strip()
+    else:
+        base = (
+            os.environ.get("GREETING_TEXT")
+            or "Welcome! I'm Sparkles, your AI voice and SMS assistant."
+        )
+    # Always end with the account question to branch the flow
+    return base.rstrip() + " " + "Do you already have an account? Please say or reply YES or NO."
 
 
 def _get_state(phone: str) -> Optional[ConversationState]:
@@ -49,8 +63,8 @@ def _clear_state(phone: str) -> None:
 
 
 def start(phone: str) -> str:
-    _set_state(phone, "ask_name", {})
-    return "Welcome! Let's get you set up. What's your full name?"
+    _set_state(phone, "ask_has_account", {})
+    return _onboarding_intro()
 
 
 def handle_sms(phone: str, body: str) -> Optional[str]:
@@ -58,6 +72,19 @@ def handle_sms(phone: str, body: str) -> Optional[str]:
     if not st:
         return None
     data = json.loads(st.data or "{}")
+    if st.step == "ask_has_account":
+        ans = (body or "").strip().lower()
+        if ans in ("yes", "y"):  # already has account
+            _clear_state(phone)
+            return (
+                "Great — you're all set. You can text 'pay' for a secure billing link, "
+                "or just start chatting. If you need help, reply 'help'."
+            )
+        if ans in ("no", "n"):
+            _set_state(phone, "ask_name", data)
+            return "Okay, let's create your account. What's your full name?"
+        # Nudge if not understood
+        return "Please reply YES or NO to continue."
     if st.step == "ask_name":
         data["name"] = body.strip()
         _set_state(phone, "ask_prison_id", data)
@@ -99,15 +126,29 @@ def voice_prompt(step: str) -> str:
         return "Thanks. Please say your prison I D."
     if step == "ask_affiliate":
         return "If you have an affiliate referral code, say it now. Otherwise say none."
+    if step == "ask_has_account":
+        return "Do you already have an account? Please say yes or no."
     return ""
 
 
 def handle_voice_input(phone: str, speech: str) -> str:
     st = _get_state(phone)
     if not st:
-        _set_state(phone, "ask_name", {})
-        return voice_prompt("ask_name")
+        _set_state(phone, "ask_has_account", {})
+        return voice_prompt("ask_has_account")
     data = json.loads(st.data or "{}")
+    if st.step == "ask_has_account":
+        ans = (speech or "").strip().lower()
+        if ans in ("yes", "y", "yeah", "yep"):
+            _clear_state(phone)
+            return (
+                "Great — you're already set up. If you'd like to handle billing now, say pay. "
+                "Otherwise, ask me anything."
+            )
+        if ans in ("no", "n", "nope"):
+            _set_state(phone, "ask_name", data)
+            return voice_prompt("ask_name")
+        return "Please say yes or no."
     if st.step == "ask_name":
         data["name"] = speech.strip()
         _set_state(phone, "ask_prison_id", data)
@@ -140,4 +181,3 @@ def handle_voice_input(phone: str, speech: str) -> str:
         _clear_state(phone)
         return "You're all set up. To pay now, say pay, or you can text pay for a link."
     return ""
-

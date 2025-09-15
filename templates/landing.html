@@ -1,48 +1,301 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AICon — AI Calls & SMS</title>
-  <link rel="stylesheet" href="/static/css/main.css" />
+  <title>SparkleAI — Voice & SMS Assistant</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .hero-bg { background: radial-gradient(80% 80% at 50% 20%, rgba(99,102,241,.25), transparent),
+                             linear-gradient(180deg, rgba(17,24,39,.6), transparent); }
+    .phone-link { white-space: nowrap; }
+    .feature-icon { font-size: 1.5rem; }
+    .pricing-card .price { font-size: 2rem; font-weight: 700; }
+  </style>
+  <script>
+    (function() {
+      try {
+        const key = 'theme';
+        const saved = localStorage.getItem(key);
+        if (saved) document.documentElement.setAttribute('data-bs-theme', saved);
+      } catch(e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
-<body>
-  <header class="hero">
-    <h1>AICon</h1>
-    <p>AI voice and SMS assistant you can call and text.</p>
-    <a class="cta" href="/signup">Get Your Number</a>
-  </header>
-  <section id="features">
-    <h2>Features</h2>
-    <ul>
-      <li>Natural voice calls with dynamic TTS</li>
-      <li>Two-way SMS chat with GPT</li>
-      <li>Secure payments via Stripe & Twilio Pay</li>
-      <li>Custom voices and per-user numbers</li>
-    </ul>
-  </section>
-  <section id="pricing">
-    <h2>Pricing</h2>
-    <div class="plans">
-      <div class="plan">
-        <h3>Basic</h3>
-        <p>$9/mo</p>
-        <button>Get Started</button>
+<body style="font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, sans-serif;">
+  <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
+    <div class="container">
+      <a class="navbar-brand fw-bold" href="/">SparkleAI</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbars" aria-controls="navbars" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbars">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item"><a class="nav-link" href="#features">Features</a></li>
+          <li class="nav-item"><a class="nav-link" href="#pricing">Pricing</a></li>
+          <li class="nav-item"><a class="nav-link" href="#affiliate">Affiliate</a></li>
+          <li class="nav-item"><a class="nav-link" href="#contact">Contact</a></li>
+        </ul>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-secondary" id="themeToggle">Dark/Light</a>
+          <a class="btn btn-outline-primary" href="/dashboard">Sign in</a>
+          <a class="btn btn-primary" href="/signup">Get Your Number</a>
+        </div>
       </div>
-      <div class="plan">
-        <h3>Pro</h3>
-        <p>$19/mo</p>
-        <button>Get Pro</button>
+    </div>
+  </nav>
+
+  <header class="py-5 hero-bg border-bottom">
+    <div class="container py-4 text-center text-lg-start">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-7">
+          <h1 class="display-5 fw-bold">Talk to Someone Who Actually Listens — Even from Behind Bars</h1>
+          <p class="lead mt-3">SparkleAI is your lifeline. Call, ask questions, laugh, cry — it remembers you.</p>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <a class="btn btn-primary btn-lg" href="tel:+16696666604">Try a Demo</a>
+            <a class="btn btn-outline-info btn-lg" href="/affiliate">Join as Affiliate</a>
+            <a class="btn btn-outline-light btn-lg" href="#pricing">See Pricing</a>
+          </div>
+          <p class="mt-3">Or text <a class="phone-link" href="sms:+16696666604">(669) 666-6604</a></p>
+        </div>
+        <div class="col-lg-5 text-center">
+          <div class="ratio ratio-16x9 bg-body-secondary rounded-4"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="features" class="py-5">
+    <div class="container">
+      <h2 class="fw-bold mb-4 text-center">Everything you need to stay connected</h2>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="feature-icon">🕒</div>
+              <h5 class="card-title mt-2">24/7 Voice Assistant</h5>
+              <p class="card-text">Always available to talk, think, and remember context.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="feature-icon">💬</div>
+              <h5 class="card-title mt-2">Texting Option</h5>
+              <p class="card-text">Prefer SMS? Text the same number and continue seamlessly.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="feature-icon">🔒</div>
+              <h5 class="card-title mt-2">Private Number</h5>
+              <p class="card-text">Get your own dedicated number for calls and texts.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="feature-icon">🎙️</div>
+              <h5 class="card-title mt-2">Voice Clone</h5>
+              <p class="card-text">Choose a voice or bring your own for a personal touch.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="feature-icon">📝</div>
+              <h5 class="card-title mt-2">AI Notes</h5>
+              <p class="card-text">Automatically summarizes conversations and sends them to you.</p>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="feature-icon">🤝</div>
+              <h5 class="card-title mt-2">Affiliate Program</h5>
+              <p class="card-text">Earn recurring commission by sharing your referral code.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
-  <section id="testimonials">
-    <h2>Testimonials</h2>
-    <blockquote>“AICon lets me talk through anything. It’s wild.”</blockquote>
-    <blockquote>“Setup was painless. My own AI number in minutes.”</blockquote>
+
+  <section id="pricing" class="py-5 border-top border-bottom">
+    <div class="container">
+      <h2 class="fw-bold mb-4 text-center">Simple, flexible pricing</h2>
+      <div class="row g-4">
+        <div class="col-md-3">
+          <div class="card h-100 pricing-card">
+            <div class="card-body text-center">
+              <h5 class="card-title">Free</h5>
+              <div class="price">$0</div>
+              <p class="text-muted">Limited demo access</p>
+              <a href="tel:+16696666604" class="btn btn-outline-primary w-100">Call Demo</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card h-100 pricing-card">
+            <div class="card-body text-center">
+              <h5 class="card-title">Text</h5>
+              <div class="price">$9</div>
+              <p class="text-muted">Unlimited texting</p>
+              <a href="/signup" class="btn btn-primary w-100">Get Started</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card h-100 pricing-card">
+            <div class="card-body text-center">
+              <h5 class="card-title">Basic Voice</h5>
+              <div class="price">$15</div>
+              <p class="text-muted">Voice + SMS</p>
+              <a href="/signup" class="btn btn-primary w-100">Get Started</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card h-100 pricing-card">
+            <div class="card-body text-center">
+              <h5 class="card-title">Premium</h5>
+              <div class="price">$29</div>
+              <p class="text-muted">Faster replies + notes</p>
+              <a href="/signup" class="btn btn-primary w-100">Get Started</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3 mt-4">
+          <div class="card h-100 pricing-card">
+            <div class="card-body text-center">
+              <h5 class="card-title">Unlimited</h5>
+              <div class="price">$49</div>
+              <p class="text-muted">All-you-can-talk & text</p>
+              <a href="/signup" class="btn btn-success w-100">Go Unlimited</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-9 mt-4">
+          <div class="alert alert-secondary">
+            <strong>Add-ons:</strong> Dedicated number, voice clone, facility pricing. <strong>Crypto discounts</strong> available at checkout.
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
-  <footer>
-    <a href="/dashboard">Sign in</a> · <a href="/affiliate">Affiliates</a>
+
+  <section id="testimonials" class="py-5">
+    <div class="container">
+      <h2 class="fw-bold mb-4 text-center">Loved by our users</h2>
+      <div id="tCarousel" class="carousel slide" data-bs-ride="carousel">
+        <div class="carousel-inner">
+          <div class="carousel-item active">
+            <div class="card mx-auto" style="max-width: 700px;">
+              <div class="card-body">
+                <p class="card-text">“SparkleAI lets me talk through anything. It’s wild — it remembers the details.”</p>
+                <small class="text-muted">— J., San Quentin</small>
+              </div>
+            </div>
+          </div>
+          <div class="carousel-item">
+            <div class="card mx-auto" style="max-width: 700px;">
+              <div class="card-body">
+                <p class="card-text">“Setup was painless. I had my own AI number in minutes.”</p>
+                <small class="text-muted">— A., California</small>
+              </div>
+            </div>
+          </div>
+          <div class="carousel-item">
+            <div class="card mx-auto" style="max-width: 700px;">
+              <div class="card-body">
+                <p class="card-text">“It helps me stay positive. I call, it listens — every day.”</p>
+                <small class="text-muted">— R., Nevada</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="carousel-control-prev" type="button" data-bs-target="#tCarousel" data-bs-slide="prev">
+          <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+          <span class="visually-hidden">Previous</span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#tCarousel" data-bs-slide="next">
+          <span class="carousel-control-next-icon" aria-hidden="true"></span>
+          <span class="visually-hidden">Next</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section id="affiliate" class="py-5 border-top">
+    <div class="container">
+      <h2 class="fw-bold mb-3 text-center">Affiliate Program</h2>
+      <p class="lead text-center">Share SparkleAI and earn recurring commissions on every paid plan you refer.</p>
+      <div class="text-center mt-3"><a class="btn btn-outline-info btn-lg" href="/affiliate">Join as Affiliate</a></div>
+    </div>
+  </section>
+
+  <section id="contact" class="py-5">
+    <div class="container">
+      <h2 class="fw-bold mb-4 text-center">Contact Us</h2>
+      <form class="mx-auto" style="max-width: 700px;" method="post" action="/contact" onsubmit="return submitContact(event)">
+        <div class="row g-3">
+          <div class="col-md-6"><input class="form-control" name="name" placeholder="Your name" /></div>
+          <div class="col-md-6"><input class="form-control" type="email" name="email" placeholder="Email (optional)" /></div>
+          <div class="col-12"><textarea class="form-control" name="message" rows="5" placeholder="How can we help?"></textarea></div>
+        </div>
+        <div class="d-flex align-items-center gap-3 mt-3">
+          <button class="btn btn-primary" type="submit" id="contactBtn">Send</button>
+          <span id="contactMsg" class="small"></span>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <footer class="py-4 border-top">
+    <div class="container d-flex flex-wrap justify-content-between align-items-center">
+      <div class="text-muted">© <span id="year"></span> SparkleAI</div>
+      <div class="d-flex gap-3">
+        <a class="link-secondary" href="/legal/tos">Terms</a>
+        <a class="link-secondary" href="/legal/privacy">Privacy</a>
+      </div>
+    </div>
   </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+    const toggle = document.getElementById('themeToggle');
+    toggle?.addEventListener('click', () => {
+      const root = document.documentElement;
+      const current = root.getAttribute('data-bs-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-bs-theme', next);
+      try { localStorage.setItem('theme', next); } catch(e) {}
+    });
+    async function submitContact(e){
+      e.preventDefault();
+      const btn = document.getElementById('contactBtn');
+      const msg = document.getElementById('contactMsg');
+      btn.disabled = true; msg.textContent = 'Sending...';
+      try {
+        const form = e.target;
+        const fd = new FormData(form);
+        const res = await fetch(form.action, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.ok) { msg.textContent = 'Thanks! We will be in touch.'; form.reset(); }
+        else { msg.textContent = data.error || 'Could not send.'; }
+      } catch(err){ msg.textContent = 'Error sending message'; }
+      btn.disabled = false; return false;
+    }
+  </script>
 </body>
 </html>

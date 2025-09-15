@@ -156,3 +156,16 @@ def generate_elevenlabs_voice(text: str, voice_id: str, attempts: int = 2, backo
 
     assert last_exc is not None
     raise last_exc
+
+
+def generate_openai_voice(text: str, voice: str = "alloy", model: str = "gpt-4o-mini-tts") -> str:
+    """Generate speech using OpenAI TTS and save to static audio, return relative path."""
+    audio = synthesize_speech(text, voice=voice, model=model)
+    if not audio:
+        raise RuntimeError("OpenAI TTS returned no audio")
+    output_dir = _output_dir()
+    cache_key = hashlib.sha1(f"openai:{voice}:{model}:{text}".encode("utf-8")).hexdigest()
+    file_path = os.path.join(output_dir, f"openai_{cache_key}.mp3")
+    with open(file_path, "wb") as f:
+        f.write(audio)
+    return os.path.relpath(file_path, os.getcwd()).replace("\\", "/")

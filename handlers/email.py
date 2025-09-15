@@ -7,7 +7,8 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
-SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL")
+# Accept either SENDGRID_FROM_EMAIL or EMAIL_FROM for compatibility
+SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL") or os.environ.get("EMAIL_FROM")
 
 
 def send_email(to: str, subject: str, content: str) -> Optional[str]:
