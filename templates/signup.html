@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AICon — Get Your Number</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+</head>
+<body>
+  <section>
+    <h1>Get Your AI Number</h1>
+    {% if error %}<p style="color:#b91c1c">{{ error }}</p>{% endif %}
+    <form method="post" action="/signup" style="display:grid;gap:12px;max-width:420px">
+      <label>Phone (E.164): <input name="phone" placeholder="+15551234567" required /></label>
+      <label>Full name: <input name="name" /></label>
+      <label>Prison ID: <input name="prison_id" /></label>
+      <label>Affiliate code: <input name="affiliate_code" /></label>
+      <label>Plan:
+        <select name="plan">
+          <option value="basic">Basic</option>
+          <option value="pro">Pro</option>
+        </select>
+      </label>
+      <label><input type="checkbox" name="crypto" /> Pay with crypto for 25% off (if available)</label>
+      <button type="submit">Continue to Payment</button>
+    </form>
+  </section>
+</body>
+</html>
+

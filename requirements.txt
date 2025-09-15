@@ -6,3 +6,7 @@ twilio
 sendgrid
 paramiko
 requests
+SQLAlchemy
+psycopg2-binary
+stripe
+prometheus-client

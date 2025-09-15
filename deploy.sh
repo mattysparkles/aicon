@@ -69,3 +69,5 @@ SERVICE
     sudo systemctl enable --now aicon
     echo "Systemd service 'aicon' installed and started."
 fi
+
+echo "[i] Remember to set Twilio Voice and Messaging webhooks to your domain's /twilio path (unified handler)."

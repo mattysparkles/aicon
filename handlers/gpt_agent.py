@@ -1,54 +1,43 @@
-"""OpenAI GPT interaction module."""
+"""OpenAI GPT interaction module (SDK v1.x compatible)."""
 
 import os
 import logging
 from typing import List
 
-import openai
-from openai import OpenAIError
+from openai import OpenAI
+from openai import APIError  # type: ignore
 
 logger = logging.getLogger(__name__)
 
 
 def chat_completion(messages: List[dict], model: str = "gpt-4o-mini") -> str:
-    """Send messages to OpenAI ChatCompletion."""
+    """Send messages to OpenAI using the Chat Completions API."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
-    openai.api_key = api_key
-    resp = openai.ChatCompletion.create(model=model, messages=messages)
-    return resp["choices"][0]["message"]["content"]
+    client = OpenAI(api_key=api_key)
+    resp = client.chat.completions.create(model=model, messages=messages)
+    return resp.choices[0].message.content or ""
 
 
 def get_gpt_response(prompt: str) -> str:
-    """Return a GPT reply for a given prompt using OpenAI's Chat Completion API.
-
-    Parameters
-    ----------
-    prompt:
-        The text prompt to send to the model.
-
-    Returns
-    -------
-    str
-        The assistant's textual reply.
-    """
+    """Return a GPT reply for a given prompt using OpenAI's Chat Completions API."""
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
-    openai.api_key = api_key
+    client = OpenAI(api_key=api_key)
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = client.chat.completions.create(
+            model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[{"role": "user", "content": prompt}],
         )
-    except OpenAIError as exc:
+    except APIError as exc:  # pragma: no cover - external service error
         logger.error("OpenAI API error: %s", exc)
         raise
     except Exception:  # pragma: no cover - unexpected errors
         logger.exception("Unexpected error when calling OpenAI API")
         raise
 
-    return response["choices"][0]["message"]["content"].strip()
+    return (response.choices[0].message.content or "").strip()

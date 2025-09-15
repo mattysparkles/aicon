@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Envs and secrets
+.env
+.app.pid
+
+# Logs and temporary files
+aicon.log
+tmp/
+
+# Databases and artifacts
+aicon.db
+
+# Virtual envs
+venv/
+
+# OS/editor
+.DS_Store
+*.swp
+*.swo
+*.orig

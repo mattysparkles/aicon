@@ -1,0 +1,34 @@
+version: '3.9'
+services:
+  aicon:
+    build: .
+    ports:
+      - "5050:5050"
+    environment:
+      - OPENAI_API_KEY
+      - ELEVENLABS_API_KEY
+      - ELEVENLABS_VOICE_ID
+      - STRIPE_API_KEY
+      - STRIPE_PRICE_BASIC
+      - STRIPE_PRICE_PRO
+      - STRIPE_SUCCESS_URL
+      - STRIPE_CANCEL_URL
+      - STRIPE_COUPON_CRYPTO
+      - TWILIO_ACCOUNT_SID
+      - TWILIO_AUTH_TOKEN
+      - TWILIO_PHONE_NUMBER
+      - ONBOARDING_PHONE_NUMBER
+      - ADMIN_TOKEN
+      - ADMIN_EMAILS
+      - DATABASE_URL
+      - VOICE_MAP
+      - GATHER_TIMEOUT=10
+      - HOLD_MESSAGE_THRESHOLD=10
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+      restart_policy:
+        condition: on-failure
