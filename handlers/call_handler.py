@@ -102,13 +102,13 @@ def init_app(app):
 
             # If no speech has been captured yet, greet and prompt the caller.
             if not speech_text:
-            gather = vr.gather(
-                input="speech",
-                action="/voice",
-                method="POST",
-                speech_timeout="auto",
-                timeout=_env_int("GATHER_TIMEOUT", 10),
-            )
+                gather = vr.gather(
+                    input="speech",
+                    action="/voice",
+                    method="POST",
+                    speech_timeout="auto",
+                    timeout=_env_int("GATHER_TIMEOUT", 10),
+                )
 
             to_number = request.form.get("To", "")
             onboarding_number = os.environ.get("ONBOARDING_PHONE_NUMBER")
@@ -155,139 +155,141 @@ def init_app(app):
                 # In strict ElevenLabs mode, avoid any other voice; proceed without extra prompt
                 pass
 
-            return Response(str(vr), mimetype="text/xml")
+                return Response(str(vr), mimetype="text/xml")
 
-        # Inspect for onboarding or payment intents
-        lower = speech_text.strip().lower()
-        caller_state = onboarding._get_state(caller)  # type: ignore
-        if lower in ("signup", "sign up", "onboard") or caller_state:
-            if not caller_state:
-                onboarding_starts.inc()
-            prompt = onboarding.handle_voice_input(caller, speech_text)
-            gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
-            if prompt:
+            # Inspect for onboarding or payment intents
+            lower = speech_text.strip().lower()
+            caller_state = onboarding._get_state(caller)  # type: ignore
+            if lower in ("signup", "sign up", "onboard") or caller_state:
+                if not caller_state:
+                    onboarding_starts.inc()
+                prompt = onboarding.handle_voice_input(caller, speech_text)
+                gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
+                if prompt:
+                    try:
+                        voice_id = get_user_voice_id(caller) or os.environ.get("ELEVENLABS_VOICE_ID")
+                        if voice_id:
+                            rel = tts.generate_elevenlabs_voice(prompt, voice_id)
+                            base = request.url_root.rstrip("/")
+                            gather.play(f"{base}/{rel.lstrip('/')}")
+                        # If no voice_id, skip audio
+                    except Exception:
+                        # Avoid any other voice; proceed without extra prompt
+                        pass
+                return Response(str(vr), mimetype="text/xml")
+
+            if lower.startswith("set pass") or lower.startswith("set password"):
+                # Start security setup flow: ask for phrase via speech or DTMF (use ElevenLabs)
+                try:
+                    _play_elabs(vr, "Okay. Please say your security phrase after the tone. You can also enter digits.", caller)
+                except Exception:
+                    pass
+                gather = vr.gather(input="speech dtmf", action="/voice/security_set", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
+                return Response(str(vr), mimetype="text/xml")
+
+            if lower.startswith("verify pass") or lower.startswith("verify password"):
+                try:
+                    _play_elabs(vr, "Please say your security phrase now, or enter digits.", caller)
+                except Exception:
+                    pass
+                gather = vr.gather(input="speech dtmf", action="/voice/security_verify", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
+                return Response(str(vr), mimetype="text/xml")
+
+            if lower in ("pay", "payment", "subscribe"):
+                # Use Twilio <Pay> to collect card securely
+                payments_started.inc()
+                try:
+                    _play_elabs(vr, "Okay, let's take your payment now.", caller)
+                except Exception:
+                    pass
+                pay = vr.pay(
+                    charge_amount=None,
+                    action="/voice/pay_result",
+                    payment_connector=os.environ.get("TWILIO_PAY_CONNECTOR"),
+                )
+                # Replace Twilio <Say> prompts with pre-rendered ElevenLabs audio
                 try:
                     voice_id = get_user_voice_id(caller) or os.environ.get("ELEVENLABS_VOICE_ID")
+                    base = request.url_root.rstrip("/")
                     if voice_id:
-                        rel = tts.generate_elevenlabs_voice(prompt, voice_id)
-                        base = request.url_root.rstrip("/")
-                        gather.play(f"{base}/{rel.lstrip('/')}")
-                    # If no voice_id, skip audio
+                        card_url = f"{base}/{tts.generate_elevenlabs_voice('Please enter or say your card number.', voice_id).lstrip('/')}"
+                        exp_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the expiration date, month and year.', voice_id).lstrip('/')}"
+                        cvv_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the security code.', voice_id).lstrip('/')}"
+                        zip_url = f"{base}/{tts.generate_elevenlabs_voice('Please say your billing postal code.', voice_id).lstrip('/')}"
+                        pay.prompt(for_="payment-card-number", play=card_url)
+                        pay.prompt(for_="expiration-date", play=exp_url)
+                        pay.prompt(for_="security-code", play=cvv_url)
+                        pay.prompt(for_="postal-code", play=zip_url)
+                    else:
+                        # If no ElevenLabs voice is configured, keep minimal Twilio prompts disabled to preserve brand voice
+                        pass
                 except Exception:
-                    # Avoid any other voice; proceed without extra prompt
+                    # If ElevenLabs rendering fails, do not fall back to <Say>; skip prompts
                     pass
-            return Response(str(vr), mimetype="text/xml")
+                return Response(str(vr), mimetype="text/xml")
 
-        if lower.startswith("set pass") or lower.startswith("set password"):
-            # Start security setup flow: ask for phrase via speech or DTMF (use ElevenLabs)
-            try:
-                _play_elabs(vr, "Okay. Please say your security phrase after the tone. You can also enter digits.", caller)
-            except Exception:
-                pass
-            gather = vr.gather(input="speech dtmf", action="/voice/security_set", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
-            return Response(str(vr), mimetype="text/xml")
+            # We have speech; kick off background job to compute reply + TTS
+            job_id = uuid.uuid4().hex
+            call_sid = request.form.get("CallSid", "")
+            from_number = request.form.get("From", "")
+            to_number = request.form.get("To", "")
 
-        if lower.startswith("verify pass") or lower.startswith("verify password"):
-            try:
-                _play_elabs(vr, "Please say your security phrase now, or enter digits.", caller)
-            except Exception:
-                pass
-            gather = vr.gather(input="speech dtmf", action="/voice/security_verify", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
-            return Response(str(vr), mimetype="text/xml")
-
-        if lower in ("pay", "payment", "subscribe"):
-            # Use Twilio <Pay> to collect card securely
-            payments_started.inc()
-            try:
-                _play_elabs(vr, "Okay, let's take your payment now.", caller)
-            except Exception:
-                pass
-            pay = vr.pay(
-                charge_amount=None,
-                action="/voice/pay_result",
-                payment_connector=os.environ.get("TWILIO_PAY_CONNECTOR"),
-            )
-            # Replace Twilio <Say> prompts with pre-rendered ElevenLabs audio
-            try:
-                voice_id = get_user_voice_id(caller) or os.environ.get("ELEVENLABS_VOICE_ID")
-                base = request.url_root.rstrip("/")
-                if voice_id:
-                    card_url = f"{base}/{tts.generate_elevenlabs_voice('Please enter or say your card number.', voice_id).lstrip('/')}"
-                    exp_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the expiration date, month and year.', voice_id).lstrip('/')}"
-                    cvv_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the security code.', voice_id).lstrip('/')}"
-                    zip_url = f"{base}/{tts.generate_elevenlabs_voice('Please say your billing postal code.', voice_id).lstrip('/')}"
-                    pay.prompt(for_="payment-card-number", play=card_url)
-                    pay.prompt(for_="expiration-date", play=exp_url)
-                    pay.prompt(for_="security-code", play=cvv_url)
-                    pay.prompt(for_="postal-code", play=zip_url)
-                else:
-                    # If no ElevenLabs voice is configured, keep minimal Twilio prompts disabled to preserve brand voice
-                    pass
-            except Exception:
-                # If ElevenLabs rendering fails, do not fall back to <Say>; skip prompts
-                pass
-            return Response(str(vr), mimetype="text/xml")
-
-        # We have speech; kick off background job to compute reply + TTS
-        job_id = uuid.uuid4().hex
-        call_sid = request.form.get("CallSid", "")
-        from_number = request.form.get("From", "")
-        to_number = request.form.get("To", "")
-
-        def worker(job: str, user_text: str, csid: str, frm: str, to: str):
-            try:
-                reply_text = gpt_agent.get_gpt_response(user_text)
-                # Resolve voice preference
-                voice_id = get_user_voice_id(frm) or os.environ.get("ELEVENLABS_VOICE_ID")
-                audio_rel_path = None
-                if voice_id:
+            def worker(job: str, user_text: str, csid: str, frm: str, to: str):
+                try:
+                    reply_text = gpt_agent.get_gpt_response(user_text)
+                    # Resolve voice preference
+                    voice_id = get_user_voice_id(frm) or os.environ.get("ELEVENLABS_VOICE_ID")
+                    audio_rel_path = None
+                    if voice_id:
+                        try:
+                            audio_rel_path = tts.generate_elevenlabs_voice(reply_text, voice_id)
+                        except Exception:
+                            audio_rel_path = None
+                    if audio_rel_path:
+                        set_job_result(job, audio_rel_path)
+                    else:
+                        # As a last-resort fallback, return the text
+                        set_job_result(job, f"TEXT:{reply_text}")
                     try:
-                        audio_rel_path = tts.generate_elevenlabs_voice(reply_text, voice_id)
-                    except Exception:
-                        audio_rel_path = None
-                if audio_rel_path:
-                    set_job_result(job, audio_rel_path)
-                else:
-                    # As a last-resort fallback, return the text
-                    set_job_result(job, f"TEXT:{reply_text}")
-                try:
-                    log_transcript(
-                        call_sid=csid,
-                        from_number=frm,
-                        to_number=to,
-                        user_text=user_text,
-                        gpt_reply=reply_text,
-                    )
-                except Exception:
-                    pass
-                # Persist to DB
-                try:
-                    with db_session() as s:
-                        s.add(
-                            Interaction(
-                                user_id=frm,
-                                input_type="voice",
-                                transcript=user_text,
-                                response=reply_text,
-                                model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
-                                voice_id=voice_id or "",
-                            )
+                        log_transcript(
+                            call_sid=csid,
+                            from_number=frm,
+                            to_number=to,
+                            user_text=user_text,
+                            gpt_reply=reply_text,
                         )
-                except Exception:
-                    logger.exception("Failed to record interaction to DB")
-            except Exception as exc:
-                # Store a sentinel so /play can fallback to a generic message if needed (avoid Polly)
-                set_job_result(job, f"ERROR:{exc}")
+                    except Exception:
+                        pass
+                    # Persist to DB
+                    try:
+                        with db_session() as s:
+                            s.add(
+                                Interaction(
+                                    user_id=frm,
+                                    input_type="voice",
+                                    transcript=user_text,
+                                    response=reply_text,
+                                    model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                                    voice_id=voice_id or "",
+                                )
+                            )
+                    except Exception:
+                        logger.exception("Failed to record interaction to DB")
+                except Exception as exc:
+                    # Store a sentinel so /play can fallback to a generic message if needed (avoid Polly)
+                    set_job_result(job, f"ERROR:{exc}")
 
-        threading.Thread(
-            target=worker,
-            args=(job_id, speech_text, call_sid, from_number, to_number),
-            daemon=True,
-        ).start()
+            threading.Thread(
+                target=worker,
+                args=(job_id, speech_text, call_sid, from_number, to_number),
+                daemon=True,
+            ).start()
 
-        # Acknowledge by immediately polling /play (no filler speech yet)
-        vr.redirect(f"/play?job={job_id}&n=0&hold=0", method="POST")
-        return Response(str(vr), mimetype="text/xml")
+            # Acknowledge by immediately polling /play (no filler speech yet)
+            vr.redirect(f"/play?job={job_id}&n=0&hold=0", method="POST")
+            return Response(str(vr), mimetype="text/xml")
+        
+        
         except Exception as exc:
             # Never 500 to Twilio; provide a gentle nudge and continue
             try:
@@ -302,8 +304,7 @@ def init_app(app):
                 fallback.redirect("/voice", method="POST")
                 return Response(str(fallback), mimetype="text/xml")
 
-        # The direct reply branch is now handled by /play polling.
-        return Response(str(vr), mimetype="text/xml")
+    # The direct reply branch is now handled by /play polling.
 
     @app.route("/play", methods=["GET", "POST"])
     def play_route() -> Response:
@@ -322,56 +323,56 @@ def init_app(app):
                     pass
                 gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
                 return Response(str(vr), mimetype="text/xml")
+            
+            result = get_job_result(job_id)
+            if result is None:
+                # Not ready yet; poll again shortly
+                vr.pause(length=2)
+                threshold = _env_int("HOLD_MESSAGE_THRESHOLD", 10)
+                # After threshold seconds of waiting, play a single hold message in ElevenLabs voice if available
+                if (n + 1) * 2 >= threshold and hold != "1":
+                    try:
+                        from_number = request.values.get("From", "")
+                        hold_text = "One moment while I prepare your answer."
+                        voice_id = get_user_voice_id(from_number) or os.environ.get("ELEVENLABS_VOICE_ID")
+                        if voice_id:
+                            rel = tts.generate_elevenlabs_voice(hold_text, voice_id)
+                            base = request.url_root.rstrip("/")
+                            vr.play(f"{base}/{rel.lstrip('/')}")
+                        # If no voice_id, skip audio to avoid non-brand voice
+                    except Exception:
+                        # Strict mode: do not play any other TTS
+                        pass
+                    vr.redirect(f"/play?job={job_id}&n={n+1}&hold=1", method="POST")
+                else:
+                    vr.redirect(f"/play?job={job_id}&n={n+1}&hold={hold}", method="POST")
+                return Response(str(vr), mimetype="text/xml")
 
-        result = get_job_result(job_id)
-        if result is None:
-            # Not ready yet; poll again shortly
-            vr.pause(length=2)
-            threshold = _env_int("HOLD_MESSAGE_THRESHOLD", 10)
-            # After threshold seconds of waiting, play a single hold message in ElevenLabs voice if available
-            if (n + 1) * 2 >= threshold and hold != "1":
+            if result.startswith("TEXT:"):
+                # Prefer ElevenLabs for text fallback to keep brand voice
+                text = result[5:]
                 try:
-                    from_number = request.values.get("From", "")
-                    hold_text = "One moment while I prepare your answer."
-                    voice_id = get_user_voice_id(from_number) or os.environ.get("ELEVENLABS_VOICE_ID")
-                    if voice_id:
-                        rel = tts.generate_elevenlabs_voice(hold_text, voice_id)
-                        base = request.url_root.rstrip("/")
-                        vr.play(f"{base}/{rel.lstrip('/')}")
-                    # If no voice_id, skip audio to avoid non-brand voice
+                    _play_elabs(vr, text, request.values.get("From", ""))
                 except Exception:
-                    # Strict mode: do not play any other TTS
                     pass
-                vr.redirect(f"/play?job={job_id}&n={n+1}&hold=1", method="POST")
-            else:
-                vr.redirect(f"/play?job={job_id}&n={n+1}&hold={hold}", method="POST")
-            return Response(str(vr), mimetype="text/xml")
+                gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
+                return Response(str(vr), mimetype="text/xml")
 
-        if result.startswith("TEXT:"):
-            # Prefer ElevenLabs for text fallback to keep brand voice
-            text = result[5:]
-            try:
-                _play_elabs(vr, text, request.values.get("From", ""))
-            except Exception:
-                pass
+            if result.startswith("ERROR:"):
+                # Last-resort generic error; nudge and continue (brand voice)
+                try:
+                    _play_elabs(vr, "Sorry, I hit a snag. Please try again.", request.values.get("From", ""))
+                except Exception:
+                    pass
+                gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
+                return Response(str(vr), mimetype="text/xml")
+
+            # Play the ready audio and continue multi-turn
+            base = request.url_root.rstrip("/")
+            file_url = f"{base}/{result.lstrip('/')}"
+            vr.play(file_url)
             gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
             return Response(str(vr), mimetype="text/xml")
-
-        if result.startswith("ERROR:"):
-            # Last-resort generic error; nudge and continue (brand voice)
-            try:
-                _play_elabs(vr, "Sorry, I hit a snag. Please try again.", request.values.get("From", ""))
-            except Exception:
-                pass
-            gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
-            return Response(str(vr), mimetype="text/xml")
-
-        # Play the ready audio and continue multi-turn
-        base = request.url_root.rstrip("/")
-        file_url = f"{base}/{result.lstrip('/')}"
-        vr.play(file_url)
-        gather = vr.gather(input="speech", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 10))
-        return Response(str(vr), mimetype="text/xml")
         except Exception:
             # Never 500 to Twilio; provide a gentle nudge and continue
             fallback = VoiceResponse()

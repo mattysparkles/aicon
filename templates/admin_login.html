@@ -17,13 +17,17 @@
         {% endif %}
         <form method="post" action="/admin/login">
           <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" name="email" placeholder="admin@example.com" />
+          </div>
+          <div class="mb-3">
             <label class="form-label">Password</label>
             <input type="password" class="form-control" name="password" placeholder="Admin password" />
           </div>
           <div class="mb-3">
             <label class="form-label">Or Token</label>
             <input type="text" class="form-control" name="token" placeholder="Admin token" />
-            <div class="form-text">Configured via env ADMIN_PASSWORD or ADMIN_TOKEN.</div>
+            <div class="form-text">Configured via env ADMIN_EMAIL + ADMIN_PASSWORD or ADMIN_TOKEN.</div>
           </div>
           <div class="d-grid">
             <button class="btn btn-primary" type="submit">Sign in</button>
@@ -35,4 +39,3 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-

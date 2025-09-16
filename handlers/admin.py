@@ -31,17 +31,23 @@ def init_app(app) -> None:
 
     @app.post("/admin/login")
     def admin_login_post():
+        email = (request.form.get("email") or "").strip().lower()
         password = (request.form.get("password") or "").strip()
         token = (request.form.get("token") or "").strip()
         ok = False
+        # Env-based credentials
+        admin_email = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()
         admin_pw = os.environ.get("ADMIN_PASSWORD")
         admin_token = os.environ.get("ADMIN_TOKEN")
-        if admin_pw and password == admin_pw:
-            ok = True
-        if admin_token and token == admin_token:
+        if admin_email and admin_pw and email and password:
+            if email == admin_email and password == admin_pw:
+                ok = True
+        if not ok and admin_token and token == admin_token:
             ok = True
         if ok:
             session["is_admin"] = True
+            if email:
+                session["admin_email"] = email
             return redirect(url_for("admin_home"))
         return render_template("admin_login.html", error="Invalid credentials")
 
