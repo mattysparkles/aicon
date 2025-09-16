@@ -22,3 +22,6 @@ venv/
 *.swp
 *.swo
 *.orig
+
+# Generated audio artifacts
+static/audio/*.mp3

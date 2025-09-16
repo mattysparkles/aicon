@@ -38,10 +38,10 @@ def init_app(app):
         This enforces brand voice consistency by avoiding Twilio <Say>.
         """
         voice_id = get_user_voice_id(from_number) or os.environ.get("ELEVENLABS_VOICE_ID")
-        if voice_id:
-            rel = tts.generate_elevenlabs_voice(text, voice_id)
-        else:
-            rel = tts.generate_sparkles_voice(text)
+        # Enforce strict brand voice: only play if a specific ElevenLabs voice_id is available
+        if not voice_id:
+            return
+        rel = tts.generate_elevenlabs_voice(text, voice_id)
         base = request.url_root.rstrip("/")
         target.play(f"{base}/{rel.lstrip('/')}")
 
@@ -146,21 +146,14 @@ def init_app(app):
                 voice_id = get_user_voice_id(caller) or os.environ.get("ELEVENLABS_VOICE_ID")
                 if voice_id:
                     audio_rel_path = tts.generate_elevenlabs_voice(greeting_text, voice_id)
-                else:
-                    audio_rel_path = tts.generate_sparkles_voice(greeting_text)
-                base = request.url_root.rstrip("/")
-                file_url = f"{base}/{audio_rel_path.lstrip('/')}"
-                logger.info("Greeting audio ready at %s", file_url)
-                gather.play(file_url)
-            except Exception as exc:
-                logger.warning("Greeting ElevenLabs failed, falling back to OpenAI TTS: %s", exc)
-                try:
-                    rel = tts.generate_openai_voice(greeting_text)
                     base = request.url_root.rstrip("/")
-                    gather.play(f"{base}/{rel.lstrip('/')}")
-                except Exception:
-                    # In strict ElevenLabs mode, avoid any other voice; proceed without extra prompt
-                    pass
+                    file_url = f"{base}/{audio_rel_path.lstrip('/')}"
+                    logger.info("Greeting audio ready at %s", file_url)
+                    gather.play(file_url)
+                # If no voice_id configured, skip audio to maintain brand voice integrity
+            except Exception:
+                # In strict ElevenLabs mode, avoid any other voice; proceed without extra prompt
+                pass
 
             return Response(str(vr), mimetype="text/xml")
 
@@ -179,10 +172,7 @@ def init_app(app):
                         rel = tts.generate_elevenlabs_voice(prompt, voice_id)
                         base = request.url_root.rstrip("/")
                         gather.play(f"{base}/{rel.lstrip('/')}")
-                    else:
-                        rel = tts.generate_openai_voice(prompt)
-                        base = request.url_root.rstrip("/")
-                        gather.play(f"{base}/{rel.lstrip('/')}")
+                    # If no voice_id, skip audio
                 except Exception:
                     # Avoid any other voice; proceed without extra prompt
                     pass
@@ -212,11 +202,30 @@ def init_app(app):
                 _play_elabs(vr, "Okay, let's take your payment now.", caller)
             except Exception:
                 pass
-            pay = vr.pay(charge_amount=None, action="/voice/pay_result", payment_connector=os.environ.get("TWILIO_PAY_CONNECTOR"))
-            pay.prompt(for_="payment-card-number", say="Please enter or say your card number.")
-            pay.prompt(for_="expiration-date", say="Please say the expiration date, month and year.")
-            pay.prompt(for_="security-code", say="Please say the security code.")
-            pay.prompt(for_="postal-code", say="Please say your billing postal code.")
+            pay = vr.pay(
+                charge_amount=None,
+                action="/voice/pay_result",
+                payment_connector=os.environ.get("TWILIO_PAY_CONNECTOR"),
+            )
+            # Replace Twilio <Say> prompts with pre-rendered ElevenLabs audio
+            try:
+                voice_id = get_user_voice_id(caller) or os.environ.get("ELEVENLABS_VOICE_ID")
+                base = request.url_root.rstrip("/")
+                if voice_id:
+                    card_url = f"{base}/{tts.generate_elevenlabs_voice('Please enter or say your card number.', voice_id).lstrip('/')}"
+                    exp_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the expiration date, month and year.', voice_id).lstrip('/')}"
+                    cvv_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the security code.', voice_id).lstrip('/')}"
+                    zip_url = f"{base}/{tts.generate_elevenlabs_voice('Please say your billing postal code.', voice_id).lstrip('/')}"
+                    pay.prompt(for_="payment-card-number", play=card_url)
+                    pay.prompt(for_="expiration-date", play=exp_url)
+                    pay.prompt(for_="security-code", play=cvv_url)
+                    pay.prompt(for_="postal-code", play=zip_url)
+                else:
+                    # If no ElevenLabs voice is configured, keep minimal Twilio prompts disabled to preserve brand voice
+                    pass
+            except Exception:
+                # If ElevenLabs rendering fails, do not fall back to <Say>; skip prompts
+                pass
             return Response(str(vr), mimetype="text/xml")
 
         # We have speech; kick off background job to compute reply + TTS
@@ -234,13 +243,8 @@ def init_app(app):
                 if voice_id:
                     try:
                         audio_rel_path = tts.generate_elevenlabs_voice(reply_text, voice_id)
-                    except Exception as tts_exc:
-                        logger.warning("ElevenLabs failed for reply; will try OpenAI TTS next. err=%s", tts_exc)
-                if not audio_rel_path:
-                    try:
-                        audio_rel_path = tts.generate_openai_voice(reply_text)
                     except Exception:
-                        pass
+                        audio_rel_path = None
                 if audio_rel_path:
                     set_job_result(job, audio_rel_path)
                 else:
@@ -332,18 +336,12 @@ def init_app(app):
                     voice_id = get_user_voice_id(from_number) or os.environ.get("ELEVENLABS_VOICE_ID")
                     if voice_id:
                         rel = tts.generate_elevenlabs_voice(hold_text, voice_id)
-                    else:
-                        rel = tts.generate_openai_voice(hold_text)
-                    base = request.url_root.rstrip("/")
-                    vr.play(f"{base}/{rel.lstrip('/')}")
-                except Exception:
-                    # Avoid Polly; fallback to OpenAI TTS, then default Twilio say
-                    try:
-                        rel = tts.generate_openai_voice(hold_text)
                         base = request.url_root.rstrip("/")
                         vr.play(f"{base}/{rel.lstrip('/')}")
-                    except Exception:
-                        pass
+                    # If no voice_id, skip audio to avoid non-brand voice
+                except Exception:
+                    # Strict mode: do not play any other TTS
+                    pass
                 vr.redirect(f"/play?job={job_id}&n={n+1}&hold=1", method="POST")
             else:
                 vr.redirect(f"/play?job={job_id}&n={n+1}&hold={hold}", method="POST")
@@ -478,11 +476,30 @@ def init_app(app):
                 _play_elabs(vr, "Okay, let's take your payment now.", caller)
             except Exception:
                 pass
-            pay = vr.pay(charge_amount=None, action="/voice/pay_result", payment_connector=os.environ.get("TWILIO_PAY_CONNECTOR"))
-            pay.prompt(for_="payment-card-number", say="Please enter or say your card number.")
-            pay.prompt(for_="expiration-date", say="Please say the expiration date, month and year.")
-            pay.prompt(for_="security-code", say="Please say the security code.")
-            pay.prompt(for_="postal-code", say="Please say your billing postal code.")
+            pay = vr.pay(
+                charge_amount=None,
+                action="/voice/pay_result",
+                payment_connector=os.environ.get("TWILIO_PAY_CONNECTOR"),
+            )
+            # Replace Twilio <Say> prompts with pre-rendered ElevenLabs audio
+            try:
+                voice_id = get_user_voice_id(caller) or os.environ.get("ELEVENLABS_VOICE_ID")
+                base = request.url_root.rstrip("/")
+                if voice_id:
+                    card_url = f"{base}/{tts.generate_elevenlabs_voice('Please enter or say your card number.', voice_id).lstrip('/')}"
+                    exp_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the expiration date, month and year.', voice_id).lstrip('/')}"
+                    cvv_url = f"{base}/{tts.generate_elevenlabs_voice('Please say the security code.', voice_id).lstrip('/')}"
+                    zip_url = f"{base}/{tts.generate_elevenlabs_voice('Please say your billing postal code.', voice_id).lstrip('/')}"
+                    pay.prompt(for_="payment-card-number", play=card_url)
+                    pay.prompt(for_="expiration-date", play=exp_url)
+                    pay.prompt(for_="security-code", play=cvv_url)
+                    pay.prompt(for_="postal-code", play=zip_url)
+                else:
+                    # If no ElevenLabs voice is configured, keep minimal Twilio prompts disabled to preserve brand voice
+                    pass
+            except Exception:
+                # If ElevenLabs rendering fails, do not fall back to <Say>; skip prompts
+                pass
             return Response(str(vr), mimetype="text/xml")
         else:
             try:

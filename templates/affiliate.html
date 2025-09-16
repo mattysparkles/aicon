@@ -94,6 +94,42 @@
         </div>
       </div>
 
+      {% if tier %}
+      <div class="row g-3 mb-4">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">Your Tier & Milestones</div>
+            <div class="card-body row">
+              <div class="col-md-4">
+                <div class="small text-muted">Current Commission</div>
+                <div class="fs-4">{{ (tier.percent_bps/100)|round(2) }}%</div>
+                <div class="small text-muted">Residual Window</div>
+                <div class="fs-6">{{ tier.months }} months</div>
+              </div>
+              <div class="col-md-4">
+                <div class="small text-muted">Signups</div>
+                <div class="fs-5">Total: {{ tier.metrics.total_signups }}</div>
+                <div class="fs-6 text-muted">Last 30 days: {{ tier.metrics.velocity_30d }}</div>
+              </div>
+              <div class="col-md-4">
+                {% if tier.next_tier %}
+                  <div class="small text-muted">Next Tier Target</div>
+                  <div class="fs-6">Reach {{ tier.next_tier.min_signups }} total or {{ tier.next_tier.min_velocity_30d }} in 30 days</div>
+                  <div class="small">Then earn {{ (tier.next_tier.percent_bps/100)|round(2) }}% for {{ tier.next_tier.months }} months.</div>
+                {% else %}
+                  <div class="small text-muted">Top Tier Achieved</div>
+                  <div class="fs-6">Keep momentum to maintain benefits.</div>
+                {% endif %}
+              </div>
+            </div>
+            <div class="card-footer small text-muted">
+              Program rules: no spam, fraud, or self‑referrals. Commissions may be reversed for refunds or policy violations. Residuals apply to active subscriptions within your tier window.
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <div class="row g-4">
         <div class="col-12 col-lg-7">
           <div class="card">

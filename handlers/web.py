@@ -293,6 +293,13 @@ def affiliate():
             payouts = s.query(Payout).filter(Payout.affiliate_id == aff_id).order_by(Payout.created_at.desc()).all()
             paid_out = int(sum(p.amount_cents for p in payouts if p.status in ("approved", "paid")))
             available_cents = max(0, earnings_total - paid_out)
+        # Tier summary
+        tier = None
+        try:
+            from handlers.billing import get_affiliate_tier_summary
+            tier = get_affiliate_tier_summary(code or "") if code else None
+        except Exception:
+            tier = None
     base = request.url_root.rstrip("/")
     link = f"{base}/r/{code}" if code else None
     return render_template(
@@ -310,6 +317,7 @@ def affiliate():
         min_withdraw_cents=1000,
         voice_verified=voice_verified,
         parent_code=parent_code,
+        tier=tier,
     )
 
 
@@ -549,7 +557,7 @@ def signup_post():
     name = (request.form.get("name") or "").strip()
     prison_id = (request.form.get("prison_id") or "").strip()
     affiliate_code = (request.form.get("affiliate_code") or "").strip()
-    plan = (request.form.get("plan") or "basic").strip().lower()
+    plan = (request.form.get("plan") or "text").strip().lower()
     crypto = (request.form.get("crypto") == "on")
 
     if not phone:

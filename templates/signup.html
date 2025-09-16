@@ -17,11 +17,13 @@
       <label>Affiliate code: <input name="affiliate_code" value="{{ affiliate_code or '' }}" /></label>
       <label>Plan:
         <select name="plan">
-          <option value="basic">Basic</option>
-          <option value="pro">Pro</option>
+          <option value="text">Text-Only — $19/mo</option>
+          <option value="basic_voice">Basic Voice — $39/mo</option>
+          <option value="premium_voice_plus">Premium Voice+ — $79/mo</option>
+          <option value="unlimited">Unlimited — $129/mo</option>
         </select>
       </label>
-      <label><input type="checkbox" name="crypto" /> Pay with crypto for 25% off (if available)</label>
+      <label><input type="checkbox" name="crypto" /> Pay with crypto for discounted tiers (if available)</label>
       <button type="submit">Continue to Payment</button>
     </form>
   </section>
