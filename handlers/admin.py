@@ -27,13 +27,22 @@ def init_app(app) -> None:
     def admin_login_get():
         if session.get("is_admin"):
             return redirect(url_for("admin_home"))
-        return render_template("admin_login.html")
+        # Surface which auth methods are configured, to guide the template
+        admin_email = (os.environ.get("ADMIN_EMAIL") or "").strip()
+        admin_pw = os.environ.get("ADMIN_PASSWORD")
+        admin_token = (os.environ.get("ADMIN_TOKEN") or "").strip()
+        return render_template(
+            "admin_login.html",
+            has_password=bool(admin_email and admin_pw),
+            has_token=bool(admin_token),
+        )
 
     @app.post("/admin/login")
     def admin_login_post():
-        email = (request.form.get("email") or "").strip().lower()
-        password = (request.form.get("password") or "").strip()
-        token = (request.form.get("token") or "").strip()
+        # Accept common aliases to reduce friction
+        email = (request.form.get("email") or request.form.get("username") or request.form.get("user") or "").strip().lower()
+        password = (request.form.get("password") or request.form.get("pass") or "").strip()
+        token = (request.form.get("token") or request.args.get("token") or "").strip()
         ok = False
         # Env-based credentials
         admin_email = (os.environ.get("ADMIN_EMAIL") or "").strip().lower()
@@ -127,6 +136,8 @@ def init_app(app) -> None:
                     "name": r.name,
                     "prison_id": r.prison_id,
                     "affiliate_code": r.affiliate_code,
+                    "memory_enabled": (getattr(r, "memory_enabled", "true") or "true"),
+                    "usage_paused": (getattr(r, "usage_paused", "false") or "false"),
                     "suspended": (s.query(UserPreference).filter(UserPreference.user_id == r.phone, UserPreference.key == "suspended", UserPreference.value == "on").count() > 0),
                     "created_at": r.created_at.isoformat(),
                 }
@@ -167,6 +178,16 @@ def init_app(app) -> None:
                     sub.status = "active"
                 else:
                     s.add(Subscription(phone=phone, plan=plan, provider="admin", status="active"))
+            elif action == "set_memory":
+                val = str(data.get("value") or "").strip().lower()
+                u = s.query(User).filter(User.phone == phone).first()
+                if u:
+                    u.memory_enabled = "true" if val in ("true", "on", "1", "yes") else "false"
+            elif action == "set_paused":
+                val = str(data.get("value") or "").strip().lower()
+                u = s.query(User).filter(User.phone == phone).first()
+                if u:
+                    u.usage_paused = "true" if val in ("true", "on", "1", "yes") else "false"
             else:
                 return jsonify({"ok": False, "error": "unknown action"}), 400
         return jsonify({"ok": True})

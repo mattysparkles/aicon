@@ -10,3 +10,4 @@ SQLAlchemy
 psycopg2-binary
 stripe
 prometheus-client
+pydub

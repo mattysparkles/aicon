@@ -16,23 +16,30 @@
           <div class="alert alert-danger py-2">{{ error }}</div>
         {% endif %}
         <form method="post" action="/admin/login">
+          {% if has_password %}
           <div class="mb-3">
             <label class="form-label">Email</label>
-            <input type="email" class="form-control" name="email" placeholder="admin@example.com" />
+            <input type="email" class="form-control" name="email" placeholder="admin@example.com" autocomplete="username" />
           </div>
           <div class="mb-3">
             <label class="form-label">Password</label>
-            <input type="password" class="form-control" name="password" placeholder="Admin password" />
+            <input type="password" class="form-control" name="password" placeholder="Admin password" autocomplete="current-password" />
           </div>
+          {% endif %}
+          {% if has_token %}
           <div class="mb-3">
-            <label class="form-label">Or Token</label>
-            <input type="text" class="form-control" name="token" placeholder="Admin token" />
-            <div class="form-text">Configured via env ADMIN_EMAIL + ADMIN_PASSWORD or ADMIN_TOKEN.</div>
+            <label class="form-label">Admin Token</label>
+            <input type="text" class="form-control" name="token" placeholder="Paste admin token" />
           </div>
+          {% endif %}
+          <div class="form-text mb-3">Configured via env ADMIN_EMAIL + ADMIN_PASSWORD{% if has_token %} and/or ADMIN_TOKEN{% endif %}.</div>
           <div class="d-grid">
             <button class="btn btn-primary" type="submit">Sign in</button>
           </div>
         </form>
+        <div class="mt-3 text-center">
+          <a href="/login" class="small">User login</a>
+        </div>
       </div>
     </div>
   </main>

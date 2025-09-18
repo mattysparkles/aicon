@@ -38,6 +38,65 @@ def _output_dir() -> str:
     return output_dir
 
 
+def _voice_settings_from_env() -> dict:
+    """Build ElevenLabs voice_settings payload from env variables.
+
+    - ELEVENLABS_VOICE_SETTINGS_JSON: full JSON payload (takes precedence)
+    - ELEVENLABS_STABILITY, ELEVENLABS_SIMILARITY_BOOST, ELEVENLABS_STYLE
+    - ELEVENLABS_SPEAKER_BOOST: "true"/"false" (default: true)
+    """
+    import json as _json
+    raw = os.environ.get("ELEVENLABS_VOICE_SETTINGS_JSON")
+    if raw:
+        try:
+            obj = _json.loads(raw)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+    def _float(name: str) -> Optional[float]:
+        try:
+            v = os.environ.get(name)
+            return float(v) if v is not None else None
+        except Exception:
+            return None
+    stability = _float("ELEVENLABS_STABILITY")
+    sim = _float("ELEVENLABS_SIMILARITY_BOOST")
+    style = _float("ELEVENLABS_STYLE")
+    boost = (os.environ.get("ELEVENLABS_SPEAKER_BOOST", "true").lower() == "true")
+    out: dict = {"use_speaker_boost": boost}
+    if stability is not None:
+        out["stability"] = stability
+    if sim is not None:
+        out["similarity_boost"] = sim
+    if style is not None:
+        out["style"] = style
+    return out
+
+
+def _maybe_apply_gain(file_path: str) -> None:
+    """Optionally amplify audio in-place if AUDIO_GAIN_DB set and pydub available.
+
+    Safe no-op if env var not set or pydub/ffmpeg is unavailable.
+    """
+    try:
+        gain_db = float(os.environ.get("AUDIO_GAIN_DB", "0"))
+    except Exception:
+        gain_db = 0.0
+    if not gain_db:
+        return
+    try:
+        from pydub import AudioSegment  # type: ignore
+        seg = AudioSegment.from_file(file_path)
+        louder = seg.apply_gain(gain_db)
+        # Preserve mp3 output; let pydub pick defaults if bitrate unknown
+        louder.export(file_path, format="mp3")
+        logger.info("Applied audio gain %+0.1f dB to %s", gain_db, file_path)
+    except Exception:
+        # Do not fail call flow if post-processing fails
+        logger.warning("Audio gain requested but could not be applied. Ensure pydub+ffmpeg installed.")
+
+
 def generate_sparkles_voice(text: str) -> str:
     """Generate speech using ElevenLabs' Sparkles voice.
 
@@ -87,9 +146,17 @@ def generate_sparkles_voice(text: str) -> str:
 
     # Render via ElevenLabs with a reasonable timeout to avoid webhook delays
     try:
-        response = requests.post(
-            url, headers=headers, json={"text": text}, timeout=14
-        )
+        body: dict = {"text": text}
+        # Optional model and output format
+        model_id = os.environ.get("ELEVENLABS_MODEL_ID")
+        if model_id:
+            body["model_id"] = model_id
+        output_format = os.environ.get("ELEVENLABS_OUTPUT_FORMAT")
+        if output_format:
+            body["output_format"] = output_format
+        # Louder voice via speaker boost and optional tuning
+        body["voice_settings"] = _voice_settings_from_env()
+        response = requests.post(url, headers=headers, json=body, timeout=14)
         response.raise_for_status()
     except requests.Timeout:
         logger.error("ElevenLabs TTS timeout for voice_id=%s", voice_id)
@@ -107,6 +174,7 @@ def generate_sparkles_voice(text: str) -> str:
 
     with open(file_path, "wb") as f:
         f.write(response.content)
+    _maybe_apply_gain(file_path)
 
     rel = os.path.relpath(file_path, os.getcwd()).replace("\\", "/")
     return rel
@@ -135,10 +203,19 @@ def generate_elevenlabs_voice(text: str, voice_id: str, attempts: int = 2, backo
     last_exc: Exception | None = None
     for i in range(max(1, attempts)):
         try:
-            response = requests.post(url, headers=headers, json={"text": text}, timeout=14)
+            body: dict = {"text": text}
+            model_id = os.environ.get("ELEVENLABS_MODEL_ID")
+            if model_id:
+                body["model_id"] = model_id
+            output_format = os.environ.get("ELEVENLABS_OUTPUT_FORMAT")
+            if output_format:
+                body["output_format"] = output_format
+            body["voice_settings"] = _voice_settings_from_env()
+            response = requests.post(url, headers=headers, json=body, timeout=14)
             response.raise_for_status()
             with open(file_path, "wb") as f:
                 f.write(response.content)
+            _maybe_apply_gain(file_path)
             return os.path.relpath(file_path, os.getcwd()).replace("\\", "/")
         except requests.RequestException as exc:
             last_exc = exc

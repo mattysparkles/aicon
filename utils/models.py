@@ -44,11 +44,23 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     phone = Column(String(64), unique=True, nullable=False, index=True)
+    # New identifiers
+    user_uuid = Column(String(36), nullable=True, unique=True, index=True)
+    phone_number = Column(String(64), nullable=True)  # duplicate explicit field
     name = Column(String(120), nullable=True)
     prison_id = Column(String(120), nullable=True)
-    affiliate_code = Column(String(64), nullable=True)  # code they used to sign up
+    # Affiliate + referrals (case-insensitive logic handled in code)
+    affiliate_code = Column(String(64), nullable=True)  # user’s own referral code
+    referrer_id = Column(Integer, nullable=True)  # user.id of the referrer
+    affiliate_rate_bps = Column(Integer, nullable=True)  # override default rate (e.g., 1500 = 15%)
+    affiliate_balance_cents = Column(Integer, default=0, nullable=False)
+    total_earned_cents = Column(Integer, default=0, nullable=False)
     assigned_number = Column(String(64), nullable=True, unique=True)  # per-user Twilio number
     facility_code = Column(String(64), nullable=True, index=True)
+    # Usage + memory toggles
+    memory_enabled = Column(String(8), default="true", nullable=False)  # "true" or "false"
+    usage_paused = Column(String(8), default="false", nullable=False)   # "true" or "false"
+    usage_unlimited = Column(String(8), default="false", nullable=False)  # special accounts
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -120,6 +132,7 @@ class Payout(Base):
     wallet_address = Column(String(256), nullable=True)
     status = Column(String(32), default="pending", nullable=False)  # pending|approved|paid|rejected
     method = Column(String(32), nullable=True)  # paypal|crypto|commissary
+    asset = Column(String(16), nullable=True)   # BTC|ETH|DOGE|RVN|PEP|LTC|JEM
     tx_id = Column(String(128), nullable=True)
     custodian_name = Column(String(128), nullable=True)
     custodian_email = Column(String(128), nullable=True)
@@ -181,4 +194,14 @@ class FlowEvent(Base):
     phone = Column(String(64), index=True, nullable=False)
     event = Column(String(64), nullable=False)
     meta = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, index=True, nullable=False)  # FK to users.id (not enforced)
+    role = Column(String(8), nullable=False)  # "user" | "ai"
+    message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

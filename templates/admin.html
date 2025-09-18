@@ -35,7 +35,7 @@
         </div>
         <div class="table-responsive">
           <table class="table table-sm align-middle">
-            <thead><tr><th>Phone</th><th>Name</th><th>Affiliate Code</th><th>Suspended</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Phone</th><th>Name</th><th>Affiliate Code</th><th>Memory</th><th>Paused</th><th>Suspended</th><th>Actions</th></tr></thead>
             <tbody id="userRows"></tbody>
           </table>
         </div>
@@ -132,6 +132,8 @@
           <td>${u.phone}</td>
           <td>${u.name || ''}</td>
           <td><input class="form-control form-control-sm" value="${u.affiliate_code||''}" onchange="setAffiliate('${u.phone}', this.value)"/></td>
+          <td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${String(u.memory_enabled||'true').toLowerCase()==='true'?'checked':''} onchange="setMemory('${u.phone}', this.checked)"></div></td>
+          <td><div class="form-check form-switch"><input class="form-check-input" type="checkbox" ${String(u.usage_paused||'false').toLowerCase()==='true'?'checked':''} onchange="setPaused('${u.phone}', this.checked)"></div></td>
           <td>${u.suspended ? '<span class="badge bg-danger">Yes</span>' : '<span class="badge bg-success">No</span>'}</td>
           <td>
             <button class="btn btn-sm ${u.suspended ? 'btn-success' : 'btn-warning'}" onclick="toggleSuspend('${u.phone}', ${u.suspended})">${u.suspended ? 'Unsuspend' : 'Suspend'}</button>
@@ -153,6 +155,12 @@
     }
     async function setAffiliate(phone, code) {
       await fetch('/admin/users/update', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({phone, action:'set_affiliate_code', code})});
+    }
+    async function setMemory(phone, on) {
+      await fetch('/admin/users/update', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({phone, action:'set_memory', value: on})});
+    }
+    async function setPaused(phone, on) {
+      await fetch('/admin/users/update', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({phone, action:'set_paused', value: on})});
     }
     async function upgradePlan(phone) {
       const sel = document.getElementById('plan_' + phone);

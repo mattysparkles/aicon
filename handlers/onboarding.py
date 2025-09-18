@@ -11,6 +11,13 @@ from flask import request
 import os
 from utils.db import db_session
 from utils.models import ConversationState, User
+from dataclasses import dataclass
+
+
+@dataclass
+class _State:
+    step: str
+    data: str | None
 
 
 FLOW = "onboard"
@@ -29,14 +36,21 @@ def _onboarding_intro() -> str:
     return base.rstrip() + " " + "Do you already have an account? Please say or reply YES or NO."
 
 
-def _get_state(phone: str) -> Optional[ConversationState]:
+def _get_state(phone: str) -> Optional[_State]:
+    """Return a detached snapshot of the conversation state.
+
+    Avoid returning ORM instances outside the session to prevent
+    DetachedInstanceError when accessing attributes later.
+    """
     with db_session() as s:
         st = (
             s.query(ConversationState)
             .filter(ConversationState.phone == phone, ConversationState.flow == FLOW)
             .first()
         )
-        return st
+        if not st:
+            return None
+        return _State(step=st.step, data=st.data)
 
 
 def _set_state(phone: str, step: str, data: Dict[str, str]) -> None:
@@ -71,7 +85,7 @@ def handle_sms(phone: str, body: str) -> Optional[str]:
     st = _get_state(phone)
     if not st:
         return None
-    data = json.loads(st.data or "{}")
+    data = json.loads((st.data or "{}"))
     if st.step == "ask_has_account":
         ans = (body or "").strip().lower()
         if ans in ("yes", "y"):  # already has account
@@ -99,21 +113,33 @@ def handle_sms(phone: str, body: str) -> Optional[str]:
             code = ""
         data["affiliate_code"] = code
         # Save user
+        # Save user and track referrer (case-insensitive match on affiliate_code)
         with db_session() as s:
+            # find referrer by affiliate_code case-insensitive
+            ref = None
+            if code:
+                all_refs = s.query(User).filter(User.affiliate_code.isnot(None)).all()
+                cl = code.lower()
+                for ru in all_refs:
+                    if (ru.affiliate_code or "").lower() == cl:
+                        ref = ru
+                        break
             u = s.query(User).filter(User.phone == phone).first()
             if u:
                 u.name = data.get("name")
                 u.prison_id = data.get("prison_id")
                 u.affiliate_code = code
+                if ref:
+                    u.referrer_id = ref.id
             else:
-                s.add(
-                    User(
-                        phone=phone,
-                        name=data.get("name"),
-                        prison_id=data.get("prison_id"),
-                        affiliate_code=code,
-                    )
+                u = User(
+                    phone=phone,
+                    name=data.get("name"),
+                    prison_id=data.get("prison_id"),
+                    affiliate_code=code,
+                    referrer_id=(ref.id if ref else None),
                 )
+                s.add(u)
         _clear_state(phone)
         return "All set! Reply 'pay' to get a billing link or say 'pay' on a call to pay by phone."
     return None
@@ -136,7 +162,7 @@ def handle_voice_input(phone: str, speech: str) -> str:
     if not st:
         _set_state(phone, "ask_has_account", {})
         return voice_prompt("ask_has_account")
-    data = json.loads(st.data or "{}")
+    data = json.loads((st.data or "{}"))
     if st.step == "ask_has_account":
         ans = (speech or "").strip().lower()
         if ans in ("yes", "y", "yeah", "yep"):
@@ -164,20 +190,30 @@ def handle_voice_input(phone: str, speech: str) -> str:
         data["affiliate_code"] = code
         # Save user
         with db_session() as s:
+            ref = None
+            if code:
+                all_refs = s.query(User).filter(User.affiliate_code.isnot(None)).all()
+                cl = code.lower()
+                for ru in all_refs:
+                    if (ru.affiliate_code or "").lower() == cl:
+                        ref = ru
+                        break
             u = s.query(User).filter(User.phone == phone).first()
             if u:
                 u.name = data.get("name")
                 u.prison_id = data.get("prison_id")
                 u.affiliate_code = code
+                if ref:
+                    u.referrer_id = ref.id
             else:
-                s.add(
-                    User(
-                        phone=phone,
-                        name=data.get("name"),
-                        prison_id=data.get("prison_id"),
-                        affiliate_code=code,
-                    )
+                u = User(
+                    phone=phone,
+                    name=data.get("name"),
+                    prison_id=data.get("prison_id"),
+                    affiliate_code=code,
+                    referrer_id=(ref.id if ref else None),
                 )
+                s.add(u)
         _clear_state(phone)
         return "You're all set up. To pay now, say pay, or you can text pay for a link."
     return ""

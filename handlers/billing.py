@@ -171,64 +171,61 @@ def get_affiliate_tier_summary(affiliate_code: str) -> Optional[dict]:
 
 
 def credit_affiliate(phone: str, amount_cents: int, affiliate_code: Optional[str]) -> None:
-    """Credit commissions for a payment with tiered rates and residual windows.
+    """Credit commissions for a payment using user-based referrals.
 
-    - $10 signup bonus is handled at signup time in web.signup_post.
-    - Commission rate (bps) and residual window (months) are determined by tier:
-      tier selection considers total signups and 30‑day signup velocity per affiliate.
-    - Parent override remains 1% within the same window.
+    - Case-insensitive affiliate codes supported via users.affiliate_code.
+    - If the paying user has a referrer_id, use that user as referrer.
+    - Default payout is 5% (500 bps). If referrer has affiliate_rate_bps set, use it
+      (for special accounts, seed to 1500 bps = 15%).
+    - Update referrer.affiliate_balance_cents and total_earned_cents.
     """
-    if not affiliate_code:
+    if amount_cents <= 0:
         return
     with db_session() as s:
-        aff = s.query(Affiliate).filter(Affiliate.code == affiliate_code).first()
-        if not aff:
+        payer = s.query(User).filter(User.phone == phone).first()
+        referrer = None
+        # Prefer explicit referrer link
+        if payer and getattr(payer, "referrer_id", None):
+            referrer = s.query(User).filter(User.id == payer.referrer_id).first()
+        # Fallback: look up by provided affiliate_code (case-insensitive)
+        if not referrer and affiliate_code:
+            code_lc = affiliate_code.lower()
+            all_refs = s.query(User).filter(User.affiliate_code.isnot(None)).all()
+            for u in all_refs:
+                if (u.affiliate_code or "").lower() == code_lc:
+                    referrer = u
+                    break
+        if not referrer:
             return
-        # Determine first referral timestamp for the referred phone
-        first = (
-            s.query(Referral)
-            .filter(Referral.affiliate_id == aff.id, Referral.referred_phone == phone)
-            .order_by(Referral.created_at.asc())
-            .first()
-        )
-        now = datetime.utcnow()
-        # Window in days determined by current tier
-        t = _current_tier(s, aff)
-        months = int(t.get("months", 60))
-        window_days = months * 30
-        if first and first.created_at and first.created_at < now - timedelta(days=window_days):
-            # Outside commission window
-            return
-        # Direct commission based on tier rate (basis points)
-        rate_bps = int(t.get("percent_bps", 500))
+        rate_bps = int(getattr(referrer, "affiliate_rate_bps", 0) or 0) or 500
         commission_cents = int(round(amount_cents * (rate_bps / 10000.0)))
-        if commission_cents:
-            s.add(Referral(affiliate_id=aff.id, referred_phone=phone, amount_cents=amount_cents, commission_cents=commission_cents))
-        # 1% override to parent affiliate (if linked)
-        try:
-            parent_code_pref = (
-                s.query(UserPreference)
-                .filter(UserPreference.user_id == aff.owner_phone, UserPreference.key == "parent_affiliate_code")
-                .first()
-            )
-            parent_code = getattr(parent_code_pref, "value", None)
-            if parent_code and parent_code != affiliate_code:
-                parent = s.query(Affiliate).filter(Affiliate.code == parent_code).first()
-                if parent:
-                    # Check same 60-month window for parent record
-                    p_first = (
-                        s.query(Referral)
-                        .filter(Referral.affiliate_id == parent.id, Referral.referred_phone == phone)
-                        .order_by(Referral.created_at.asc())
-                        .first()
-                    )
-                    if not (p_first and p_first.created_at and p_first.created_at < now - timedelta(days=window_days)):
-                        override_cents = int(round(amount_cents * 0.01))
-                        if override_cents:
-                            s.add(Referral(affiliate_id=parent.id, referred_phone=phone, amount_cents=amount_cents, commission_cents=override_cents))
-        except Exception:
-            pass
+        referrer.affiliate_balance_cents = int(getattr(referrer, "affiliate_balance_cents", 0) or 0) + commission_cents
+        referrer.total_earned_cents = int(getattr(referrer, "total_earned_cents", 0) or 0) + commission_cents
 
 
 def init_app(app) -> None:
     app.register_blueprint(bp)
+
+
+@bp.post("/billing/request_payout")
+def request_payout() -> Response:
+    """Allow users to request a crypto payout (BTC/ETH/DOGE/RVN/PEP/LTC/JEM)."""
+    data = request.get_json(silent=True) or {}
+    phone = str(data.get("phone", "")).strip()
+    asset = str(data.get("asset", "")).strip().upper()
+    address = str(data.get("address", "")).strip()
+    amount_cents = int(data.get("amount_cents", 0))
+    if asset not in {"BTC", "ETH", "DOGE", "RVN", "PEP", "LTC", "JEM"}:
+        return jsonify({"error": "unsupported asset"}), 400
+    if not phone or not address or amount_cents <= 0:
+        return jsonify({"error": "missing phone, address, or amount"}), 400
+    from utils.models import Payout
+    with db_session() as s:
+        u = s.query(User).filter(User.phone == phone).first()
+        if not u:
+            return jsonify({"error": "user not found"}), 404
+        if (u.affiliate_balance_cents or 0) < amount_cents:
+            return jsonify({"error": "insufficient affiliate balance"}), 400
+        u.affiliate_balance_cents = (u.affiliate_balance_cents or 0) - amount_cents
+        s.add(Payout(affiliate_id=u.id, amount_cents=amount_cents, wallet_address=address, status="pending", method="crypto", asset=asset))
+    return jsonify({"status": "requested"})
