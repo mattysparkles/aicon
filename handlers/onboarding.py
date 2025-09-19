@@ -9,6 +9,7 @@ from datetime import datetime
 from flask import request
 
 import os
+from utils import brand as brand_cfg
 from utils.db import db_session
 from utils.models import ConversationState, User
 from dataclasses import dataclass
@@ -33,7 +34,8 @@ def _onboarding_intro() -> str:
             or "Welcome! I'm Sparkles, your AI voice and SMS assistant."
         )
     # Always end with the account question to branch the flow
-    return base.rstrip() + " " + "Do you already have an account? Please say or reply YES or NO."
+    brand_name = brand_cfg.name("AICon")
+    return base.rstrip() + " " + f"Do you already have an {brand_name} account? Please say or reply YES or NO."
 
 
 def _get_state(phone: str) -> Optional[_State]:
@@ -98,7 +100,8 @@ def handle_sms(phone: str, body: str) -> Optional[str]:
             _set_state(phone, "ask_name", data)
             return "Okay, let's create your account. What's your full name?"
         # Nudge if not understood
-        return "Please reply YES or NO to continue."
+        brand_name = brand_cfg.name("AICon")
+        return f"Please reply YES or NO about your {brand_name} account to continue."
     if st.step == "ask_name":
         data["name"] = body.strip()
         _set_state(phone, "ask_prison_id", data)
@@ -141,7 +144,7 @@ def handle_sms(phone: str, body: str) -> Optional[str]:
                 )
                 s.add(u)
         _clear_state(phone)
-        return "All set! Reply 'pay' to get a billing link or say 'pay' on a call to pay by phone."
+        return "All set! Reply 'pay' to get a billing link or say 'pay' on a call to pay by phone. Reply 'help' anytime for commands."
     return None
 
 
@@ -153,7 +156,7 @@ def voice_prompt(step: str) -> str:
     if step == "ask_affiliate":
         return "If you have an affiliate referral code, say it now. Otherwise say none."
     if step == "ask_has_account":
-        return "Do you already have an account? Please say yes or no."
+        return f"Do you already have an {brand_cfg.name('AICon')} account? Please say yes or no."
     return ""
 
 
@@ -174,7 +177,7 @@ def handle_voice_input(phone: str, speech: str) -> str:
         if ans in ("no", "n", "nope"):
             _set_state(phone, "ask_name", data)
             return voice_prompt("ask_name")
-        return "Please say yes or no."
+        return f"Please say yes or no about your {brand_cfg.name('AICon')} account."
     if st.step == "ask_name":
         data["name"] = speech.strip()
         _set_state(phone, "ask_prison_id", data)

@@ -53,9 +53,12 @@ The application uses the following variables:
 - `ELEVENLABS_API_KEY` (for custom voice TTS)
 - `ELEVENLABS_VOICE_ID` (your ElevenLabs voice ID)
 - `GREETING_TEXT` (optional custom greeting text)
+- `ONBOARDING_PHONE_NUMBER` (Twilio number dedicated to onboarding)
+- `MASTER_PHONE_NUMBER` (Twilio number reserved for the master account; never runs onboarding)
 - `DATABASE_URL` (optional; Postgres connection string; defaults to local SQLite `aicon.db`)
 - `VOICE_MAP` (optional; JSON mapping of voice keyword to ElevenLabs voice ID)
 - `GATHER_TIMEOUT` (optional; seconds to wait for voice input; default 8)
+- `REQUIRE_SECURITY_FOR_ASSIGNED` (optional; default true; require security phrase on assigned numbers)
 - `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`
 - `TWILIO_TEST_NUMBER` (optional SMS demo)
 - `TEST_EMAIL` (optional email demo)
@@ -64,17 +67,28 @@ The application uses the following variables:
 Notes:
 - If `ELEVENLABS_API_KEY` and a voice are set (either `ELEVENLABS_VOICE_ID` or via `VOICE_MAP`/SMS keyword), the app generates and plays TTS using ElevenLabs. Otherwise, it falls back to OpenAI TTS, and only as a last resort uses Twilio's default `<Say>` voice.
 - Set `GREETING_TEXT` to override the first rotating greeting option.
+- Audio loudness: TTS output is post-amplified by default (`AUDIO_GAIN_DB=8`). Adjust or disable by setting `AUDIO_GAIN_DB`.
 
 ## Unified Webhook, Dynamic Greeting, Logging, and Voice Management
 
 - Use `/twilio` for both Voice and Messaging webhooks. The app auto-detects and returns the correct TwiML.
-- Calls start with a rotating greeting like “Hey, it's Sparkles — what's on your mind today?” and gather speech for up to `GATHER_TIMEOUT` seconds.
+- Calls start with a rotating greeting like “Hey, it's Sparkles — what's on your mind today?” and gather speech for up to `GATHER_TIMEOUT` seconds (default 8–10s). On the `ONBOARDING_PHONE_NUMBER`, Sparkles uses an onboarding intro and specifically asks “Do you already have an AICon account?”
 - If the caller is silent, we play: “Still with me? Just say something or hang tight!” and continue the gather.
 - Every SMS and voice turn logs to the database with user id (phone), input type, transcript, response, model, and voice id (for voice calls).
 - SMS commands for voice selection:
   - `voice list` — show available voice keywords from `VOICE_MAP`
   - `voice <keyword>` — set voice preference (e.g., `voice sparkles`)
   - `upgrade voice <keyword>` — alias to set voice preference
+
+## Brand Context and Help Menu
+
+- Brand context is configurable via `config/brand.json` and is injected as a system prompt for both SMS and voice GPT replies, making the agent brand-aware (AICon/Sparkles).
+- SMS `help` (or `--help`, `-h`) returns a concise command menu. On a user's first SMS, the menu is also sent automatically.
+
+## Security Phrase Enforcement
+
+- Users can set a security phrase via voice (`set pass`) or SMS (`set pass <phrase>`).
+- When `REQUIRE_SECURITY_FOR_ASSIGNED=true`, calls or SMS to a user’s assigned number require verification before usage. The `MASTER_PHONE_NUMBER` is exempt.
 
 ## Billing & Subscriptions (Phase 2)
 

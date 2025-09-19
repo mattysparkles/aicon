@@ -112,7 +112,7 @@ def init_app(app):
                     _play_elabs(vr, "This number is inactive due to billing.", caller)
                 except Exception:
                     pass
-                gather = vr.gather(input="dtmf", action="/voice/suspended_action", method="POST", num_digits=1, timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="dtmf", action="/voice/suspended_action", method="POST", num_digits=1, timeout=_env_int("GATHER_TIMEOUT", 8))
                 try:
                     _play_elabs(gather, "Press 1 to get a payment link by text, or press 2 to pay by phone now.", caller)
                 except Exception:
@@ -155,7 +155,7 @@ def init_app(app):
                         sms_sender.enqueue_sms(u.phone, "Heads up: your account usage is paused due to limits. Reply 'pay' for a checkout link.")
                 except Exception:
                     pass
-                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 return Response(str(vr), mimetype="text/xml")
 
             # If no speech has been captured yet, greet and prompt the caller.
@@ -165,12 +165,13 @@ def init_app(app):
                     action="/voice",
                     method="POST",
                     speech_timeout="auto",
-                    timeout=_env_int("SILENCE_CHECK_INTERVAL", 5),
+                    timeout=_env_int("GATHER_TIMEOUT", 8),
                 )
 
                 to_number = request.form.get("To", "")
                 onboarding_number = os.environ.get("ONBOARDING_PHONE_NUMBER")
-                if onboarding_number and to_number == onboarding_number:
+                master_number = os.environ.get("MASTER_PHONE_NUMBER")
+                if onboarding_number and to_number == onboarding_number and (not master_number or to_number != master_number):
                     # Auto-start onboarding on the onboarding number with a longer intro
                     from . import onboarding as onboard_mod  # lazy to avoid cycle
                     onboard_mod._set_state(caller, "ask_has_account", {})  # type: ignore
@@ -180,7 +181,7 @@ def init_app(app):
                         greeting_text = long_intro.strip()
                         if not greeting_text.rstrip().endswith(("?", ".", "!")):
                             greeting_text += "."
-                        greeting_text += " Do you already have an account? Please say yes or no."
+                        greeting_text += " Do you already have an AICon account? Please say yes or no."
                     else:
                         # Fallback to standard prompt for this step
                         greeting_text = onboard_mod.voice_prompt("ask_has_account")
@@ -217,6 +218,34 @@ def init_app(app):
                 vr.redirect("/voice/idle_check", method="POST")
                 return Response(str(vr), mimetype="text/xml")
 
+            # Enforce security phrase for assigned user numbers if required
+            try:
+                require_sec = (os.environ.get("REQUIRE_SECURITY_FOR_ASSIGNED", "true").lower() == "true")
+                to_number2 = request.form.get("To", "")
+                if require_sec and to_number2:
+                    with db_session() as s:
+                        u = s.query(User).filter(User.assigned_number == to_number2).first()
+                        if u:
+                            # Skip enforcement for master number if configured
+                            master_number2 = os.environ.get("MASTER_PHONE_NUMBER")
+                            if master_number2 and to_number2 == master_number2:
+                                pass
+                            else:
+                                from utils.models import SecurityPhrase
+                                sp = s.query(SecurityPhrase).filter(SecurityPhrase.phone == (u.phone or "")).first()
+                                if sp:
+                                    csid = request.form.get("CallSid", "")
+                                    st = get_call_state(csid)
+                                    if not st.get("verified"):
+                                        try:
+                                            _play_elabs(vr, "Please say your security phrase now, or enter digits.", caller)
+                                        except Exception:
+                                            pass
+                                        gather = vr.gather(input="speech dtmf", action="/voice/security_verify", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
+                                        return Response(str(vr), mimetype="text/xml")
+            except Exception:
+                pass
+
             # Inspect for onboarding or payment intents
             lower = (speech_text or "").strip().lower()
             caller_state = onboarding._get_state(caller)  # type: ignore
@@ -224,7 +253,7 @@ def init_app(app):
                 if not caller_state:
                     onboarding_starts.inc()
                 prompt = onboarding.handle_voice_input(caller, speech_text)
-                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 if prompt:
                     try:
                         _play_elabs(gather, prompt, caller)
@@ -238,7 +267,7 @@ def init_app(app):
                     _play_elabs(vr, "Okay. Please say your security phrase after the tone. You can also enter digits.", caller)
                 except Exception:
                     pass
-                gather = vr.gather(input="speech dtmf", action="/voice/security_set", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice/security_set", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 return Response(str(vr), mimetype="text/xml")
 
             if lower.startswith("verify pass") or lower.startswith("verify password"):
@@ -246,7 +275,7 @@ def init_app(app):
                     _play_elabs(vr, "Please say your security phrase now, or enter digits.", caller)
                 except Exception:
                     pass
-                gather = vr.gather(input="speech dtmf", action="/voice/security_verify", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice/security_verify", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 return Response(str(vr), mimetype="text/xml")
 
             if lower in ("pay", "payment", "subscribe"):
@@ -366,7 +395,7 @@ def init_app(app):
             try:
                 vr = VoiceResponse()
                 _play_elabs(vr, "I hit a snag. Please ask again.", request.form.get("From", ""))
-                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 return Response(str(vr), mimetype="text/xml")
             except Exception:
                 # As a last-ditch, return minimal TwiML
@@ -392,7 +421,7 @@ def init_app(app):
                     _play_elabs(vr, "Sorry, I lost track of that request.", request.values.get("From", ""))
                 except Exception:
                     pass
-                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 return Response(str(vr), mimetype="text/xml")
             
             result = get_job_result(job_id)
@@ -426,7 +455,7 @@ def init_app(app):
                     _play_elabs(vr, text, request.values.get("From", ""))
                 except Exception:
                     pass
-                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 return Response(str(vr), mimetype="text/xml")
 
             if result.startswith("ERROR:"):
@@ -435,14 +464,14 @@ def init_app(app):
                     _play_elabs(vr, "Sorry, I hit a snag. Please try again.", request.values.get("From", ""))
                 except Exception:
                     pass
-                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+                gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
                 return Response(str(vr), mimetype="text/xml")
 
             # Play the ready audio and continue multi-turn
             base = request.url_root.rstrip("/")
             file_url = f"{base}/{result.lstrip('/')}"
             vr.play(file_url)
-            gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+            gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
             return Response(str(vr), mimetype="text/xml")
         except Exception:
             # Never 500 to Twilio; provide a gentle nudge and continue
@@ -547,14 +576,23 @@ def init_app(app):
                 _play_elabs(vr, "I didn't catch that. Let's try again.", phone)
             except Exception:
                 pass
-            gather = vr.gather(input="speech dtmf", action="/voice/security_set", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+            gather = vr.gather(input="speech dtmf", action="/voice/security_set", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
             return Response(str(vr), mimetype="text/xml")
         security_handlers.set_phrase(phone, phrase.strip(), method=("dtmf" if request.form.get("Digits") else "speech"))
         try:
             _play_elabs(vr, "Security phrase saved.", phone)
         except Exception:
             pass
-        gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+        # Mark verified flag in call state if passed
+        if ok and call_sid:
+            try:
+                st = get_call_state(call_sid)
+                st["verified"] = True
+                from utils.call_state import set_state as _set_state
+                _set_state(call_sid, st)
+            except Exception:
+                pass
+        gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
         return Response(str(vr), mimetype="text/xml")
 
     @app.route("/voice/security_verify", methods=["POST"])
@@ -581,7 +619,7 @@ def init_app(app):
                 _play_elabs(vr, "Security check failed.", phone)
             except Exception:
                 pass
-        gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+        gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
         return Response(str(vr), mimetype="text/xml")
 
     @app.route("/voice/suspended_action", methods=["POST"])
@@ -634,7 +672,7 @@ def init_app(app):
                 except Exception:
                     pass
             # Continue the call instead of hanging up; listen for next action
-            gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+            gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
             return Response(str(vr), mimetype="text/xml")
         elif digit == "2":
             # Start Twilio Pay in-call
@@ -673,7 +711,7 @@ def init_app(app):
                 _play_elabs(vr, "I didn't get that.", caller)
             except Exception:
                 pass
-            gather = vr.gather(input="dtmf", action="/voice/suspended_action", method="POST", num_digits=1, timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+            gather = vr.gather(input="dtmf", action="/voice/suspended_action", method="POST", num_digits=1, timeout=_env_int("GATHER_TIMEOUT", 8))
             try:
                 _play_elabs(gather, "Press 1 to get a payment link by text, or press 2 to pay by phone now.", caller)
             except Exception:
@@ -726,7 +764,7 @@ def init_app(app):
                 _play_elabs(vr, "I couldn't complete the payment. You can also text pay for a secure link.", phone)
             except Exception:
                 pass
-        gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("SILENCE_CHECK_INTERVAL", 5))
+        gather = vr.gather(input="speech dtmf", action="/voice", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
         return Response(str(vr), mimetype="text/xml")
 
     @app.route("/twilio", methods=["POST"])
@@ -744,8 +782,27 @@ def init_app(app):
             to_number = request.form.get("To", "")
             onboarding_number = os.environ.get("ONBOARDING_PHONE_NUMBER")
 
-            # Handle voice management commands
+            # Normalize for command parsing
             lower = body.lower()
+
+            # Help / --help / -h
+            if lower in ("help", "--help", "-h"):
+                try:
+                    lines = brand_cfg.sms_help_lines()
+                except Exception:
+                    lines = [
+                        "AICon SMS Commands:",
+                        "- help: show this menu",
+                        "- signup | onboard | sign up: start onboarding",
+                        "- pay [plan] [crypto]: get a secure payment link",
+                        "- memory on|off: enable or disable memory",
+                        "- pause on|off: pause or resume usage",
+                    ]
+                resp = MessagingResponse()
+                resp.message("\n".join(lines))
+                return Response(str(resp), mimetype="text/xml")
+
+            # Handle voice management commands
             if lower.startswith("voice ") or lower.startswith("upgrade voice "):
                 parts = body.split(maxsplit=1)
                 keyword = parts[1].strip() if len(parts) > 1 else ""
@@ -769,8 +826,9 @@ def init_app(app):
                 resp.message(help_text)
                 return Response(str(resp), mimetype="text/xml")
 
-            # Auto-start onboarding on the onboarding number
-            if onboarding_number and to_number == onboarding_number:
+            # Auto-start onboarding on the onboarding number (unless also master)
+            master_number = os.environ.get("MASTER_PHONE_NUMBER")
+            if onboarding_number and to_number == onboarding_number and (not master_number or to_number != master_number):
                 cont = onboarding.handle_sms(from_number, body)
                 if cont:
                     resp = MessagingResponse()
@@ -928,6 +986,14 @@ def init_app(app):
                 return Response(str(resp), mimetype="text/xml")
 
             # Normal SMS: forward to GPT with memory and reply
+            # Detect if this is the user's first SMS to send a help primer
+            first_contact = False
+            try:
+                with db_session() as s:
+                    cnt = s.query(Interaction).filter(Interaction.user_id == from_number, Interaction.input_type == "sms").count()
+                    first_contact = cnt == 0
+            except Exception:
+                first_contact = False
             try:
                 reply = gpt_agent.get_gpt_response_with_memory(from_number, body)
             except Exception as exc:  # pragma: no cover - external API
@@ -944,6 +1010,14 @@ def init_app(app):
                     sms_sender.enqueue_sms(from_number, p, from_number=to_number)
                 except Exception:
                     logger.exception("Failed to enqueue SMS part")
+
+            # Send help primer on first contact
+            if first_contact:
+                try:
+                    lines = brand_cfg.sms_help_lines()
+                    sms_sender.enqueue_sms(from_number, "\n".join(lines), from_number=to_number)
+                except Exception:
+                    pass
 
             # Log to DB
             try:
@@ -984,3 +1058,18 @@ def init_app(app):
     def onboard_unified() -> Response:
         # Alias endpoint used for onboarding number webhooks
         return twilio_unified()
+            # Enforce SMS security phrase on assigned user numbers if required
+            try:
+                require_sec = (os.environ.get("REQUIRE_SECURITY_FOR_ASSIGNED", "true").lower() == "true")
+                if require_sec and to_number:
+                    with db_session() as s:
+                        u = s.query(User).filter(User.assigned_number == to_number).first()
+                        if u and u.phone and (not master_number or to_number != master_number):
+                            from utils.models import SecurityPhrase
+                            sp = s.query(SecurityPhrase).filter(SecurityPhrase.phone == u.phone).first()
+                            if sp and not (lower.startswith("verify pass ") or lower.startswith("verify password ")):
+                                resp = MessagingResponse()
+                                resp.message("Please verify by replying: verify pass <your phrase>")
+                                return Response(str(resp), mimetype="text/xml")
+            except Exception:
+                pass

@@ -18,6 +18,7 @@ def _default_state() -> Dict[str, Any]:
         "last_activity": now,
         "last_warning": 0,  # 0, 15, 10, 5
         "greeted": False,
+        "verified": False,
     }
 
 
@@ -65,4 +66,3 @@ def set_warning(call_sid: str, seconds: int) -> None:
     st = get_state(call_sid)
     st["last_warning"] = seconds
     set_state(call_sid, st)
-

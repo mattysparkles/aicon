@@ -8,6 +8,7 @@ from openai import OpenAI
 from openai import APIError  # type: ignore
 from utils.db import db_session
 from utils.models import Conversation, User
+from utils import brand as brand_cfg
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,13 @@ def _build_memory_context(user_id: int, latest_user_text: str) -> List[dict]:
     # Estimate size
     joined = "\n".join(f"{r}: {m}" for r, m in history)
     msgs: List[dict] = []
+    # Brand-aware system prompt if configured
+    try:
+        sp = brand_cfg.system_prompt()
+        if sp:
+            msgs.append({"role": "system", "content": sp})
+    except Exception:
+        pass
     if len(joined) > 3000 and history:
         # Summarize history to keep context light
         summary_prompt = (
@@ -113,7 +121,12 @@ def get_gpt_response_with_memory(phone: str, user_text: str) -> str:
         if user_id and memory_on:
             messages = _build_memory_context(user_id, user_text)
         else:
-            messages = [{"role": "user", "content": user_text}]
+            # No memory: still prepend brand system prompt if available
+            messages = []
+            sp = brand_cfg.system_prompt()
+            if sp:
+                messages.append({"role": "system", "content": sp})
+            messages.append({"role": "user", "content": user_text})
         response = client.chat.completions.create(
             model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             messages=messages,

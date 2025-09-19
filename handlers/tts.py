@@ -80,9 +80,9 @@ def _maybe_apply_gain(file_path: str) -> None:
     Safe no-op if env var not set or pydub/ffmpeg is unavailable.
     """
     try:
-        gain_db = float(os.environ.get("AUDIO_GAIN_DB", "0"))
+        gain_db = float(os.environ.get("AUDIO_GAIN_DB", "8"))
     except Exception:
-        gain_db = 0.0
+        gain_db = 8.0
     if not gain_db:
         return
     try:
@@ -245,4 +245,6 @@ def generate_openai_voice(text: str, voice: str = "alloy", model: str = "gpt-4o-
     file_path = os.path.join(output_dir, f"openai_{cache_key}.mp3")
     with open(file_path, "wb") as f:
         f.write(audio)
+    # Apply optional post-gain to boost volume similar to ElevenLabs path
+    _maybe_apply_gain(file_path)
     return os.path.relpath(file_path, os.getcwd()).replace("\\", "/")
