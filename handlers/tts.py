@@ -140,6 +140,8 @@ def generate_sparkles_voice(text: str) -> str:
 
     # If already rendered, return existing file path immediately
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        # Ensure cached file reflects current gain setting
+        _maybe_apply_gain(file_path)
         # Compute public relative path rooted at /static
         rel = os.path.relpath(file_path, os.getcwd()).replace("\\", "/")
         return rel
@@ -198,6 +200,7 @@ def generate_elevenlabs_voice(text: str, voice_id: str, attempts: int = 2, backo
     file_path = os.path.join(output_dir, filename)
 
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        _maybe_apply_gain(file_path)
         return os.path.relpath(file_path, os.getcwd()).replace("\\", "/")
 
     last_exc: Exception | None = None
