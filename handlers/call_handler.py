@@ -72,6 +72,15 @@ def init_app(app):
             to_number = request.form.get("To", "")
             call_sid = request.form.get("CallSid", "")
 
+            # If we're in an onboarding flow and the user pressed DTMF, treat digits as input
+            try:
+                if not speech_text:
+                    digits = request.form.get("Digits")
+                    if digits and onboarding._get_state(caller):  # type: ignore[attr-defined]
+                        speech_text = digits
+            except Exception:
+                pass
+
             # Update activity timer when we receive speech or DTMF
             if call_sid and (request.form.get("SpeechResult") or request.form.get("Digits")):
                 touch_activity(call_sid)
@@ -174,7 +183,8 @@ def init_app(app):
                 if onboarding_number and to_number == onboarding_number and (not master_number or to_number != master_number):
                     # Auto-start onboarding on the onboarding number with a longer intro
                     from . import onboarding as onboard_mod  # lazy to avoid cycle
-                    onboard_mod._set_state(caller, "ask_has_account", {})  # type: ignore
+                    # Mark the flow context so downstream logic can tailor prompts
+                    onboard_mod._set_state(caller, "ask_has_account", {"line": "onboarding"})  # type: ignore
                     # Prefer a dedicated onboarding greeting if provided
                     long_intro = os.environ.get("ONBOARDING_GREETING_TEXT")
                     if long_intro:
@@ -209,6 +219,14 @@ def init_app(app):
                         greeted = False
                 if not greeted:
                     try:
+                        # For calls to the onboarding number, add a brief pre-prompt pause
+                        onboarding_number2 = os.environ.get("ONBOARDING_PHONE_NUMBER")
+                        pre_len = _env_int("PRE_PROMPT_PAUSE_SECONDS", 3)
+                        if onboarding_number2 and to_number == onboarding_number2 and pre_len > 0:
+                            try:
+                                gather.pause(length=pre_len)
+                            except Exception:
+                                pass
                         _play_elabs(gather, greeting_text, caller)
                     except Exception:
                         pass
@@ -220,9 +238,8 @@ def init_app(app):
 
             # Enforce security phrase for assigned user numbers if required
             try:
-                require_sec = (os.environ.get("REQUIRE_SECURITY_FOR_ASSIGNED", "true").lower() == "true")
                 to_number2 = request.form.get("To", "")
-                if require_sec and to_number2:
+                if to_number2:
                     with db_session() as s:
                         u = s.query(User).filter(User.assigned_number == to_number2).first()
                         if u:
@@ -231,18 +248,36 @@ def init_app(app):
                             if master_number2 and to_number2 == master_number2:
                                 pass
                             else:
-                                from utils.models import SecurityPhrase
-                                sp = s.query(SecurityPhrase).filter(SecurityPhrase.phone == (u.phone or "")).first()
-                                if sp:
-                                    csid = request.form.get("CallSid", "")
-                                    st = get_call_state(csid)
-                                    if not st.get("verified"):
-                                        try:
-                                            _play_elabs(vr, "Please say your security phrase now, or enter digits.", caller)
-                                        except Exception:
-                                            pass
-                                        gather = vr.gather(input="speech dtmf", action="/voice/security_verify", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
-                                        return Response(str(vr), mimetype="text/xml")
+                                # Determine per-user requirement (preference overrides env)
+                                pref = (
+                                    s.query(UserPreference)
+                                    .filter(UserPreference.user_id == (u.phone or ""), UserPreference.key == "security_required")
+                                    .first()
+                                )
+                                pref_on = ((pref.value if pref else "").lower() in ("on", "true", "1", "yes"))
+                                require_sec_env = (os.environ.get("REQUIRE_SECURITY_FOR_ASSIGNED", "true").lower() == "true")
+                                require_sec = pref_on or require_sec_env
+                                if require_sec:
+                                    from utils.models import SecurityPhrase
+                                    sp = s.query(SecurityPhrase).filter(SecurityPhrase.phone == (u.phone or "")).first()
+                                    if sp:
+                                        csid = request.form.get("CallSid", "")
+                                        st = get_call_state(csid)
+                                        if not st.get("verified"):
+                                            try:
+                                                _play_elabs(vr, "Please say your security phrase now, or enter digits.", caller)
+                                            except Exception:
+                                                pass
+                                            # Mark the intended owner so /voice/security_verify checks the right record
+                                            try:
+                                                if csid:
+                                                    from utils.call_state import set_state as _set_state
+                                                    st["verify_owner"] = u.phone or ""
+                                                    _set_state(csid, st)
+                                            except Exception:
+                                                pass
+                                            gather = vr.gather(input="speech dtmf", action="/voice/security_verify", method="POST", speech_timeout="auto", timeout=_env_int("GATHER_TIMEOUT", 8))
+                                            return Response(str(vr), mimetype="text/xml")
             except Exception:
                 pass
 
@@ -608,7 +643,18 @@ def init_app(app):
                 pass
         ok = False
         if phrase.strip():
-            ok = security_handlers.verify_phrase(phone, phrase.strip())
+            # If this call targets an assigned number with enforcement, verify against the owner's phrase
+            target_phone = phone
+            try:
+                to_number3 = request.form.get("To", "")
+                if to_number3:
+                    with db_session() as s:
+                        u = s.query(User).filter(User.assigned_number == to_number3).first()
+                        if u and (u.phone or ""):
+                            target_phone = u.phone or phone
+            except Exception:
+                pass
+            ok = security_handlers.verify_phrase(target_phone, phrase.strip())
         if ok:
             try:
                 _play_elabs(vr, "Security check passed.", phone)
@@ -785,6 +831,39 @@ def init_app(app):
             # Normalize for command parsing
             lower = body.lower()
 
+            # If texting an assigned user number and security is required, enforce verification
+            try:
+                if to_number:
+                    with db_session() as s:
+                        owner = s.query(User).filter(User.assigned_number == to_number).first()
+                        if owner:
+                            master_number3 = os.environ.get("MASTER_PHONE_NUMBER")
+                            if not (master_number3 and to_number == master_number3):
+                                # Per-user preference overrides env default
+                                pref = (
+                                    s.query(UserPreference)
+                                    .filter(UserPreference.user_id == (owner.phone or ""), UserPreference.key == "security_required")
+                                    .first()
+                                )
+                                pref_on = ((pref.value if pref else "").lower() in ("on", "true", "1", "yes"))
+                                require_sec_env = (os.environ.get("REQUIRE_SECURITY_FOR_ASSIGNED", "true").lower() == "true")
+                                from utils.models import SecurityPhrase
+                                sp = s.query(SecurityPhrase).filter(SecurityPhrase.phone == (owner.phone or "")).first()
+                                if (pref_on or require_sec_env) and sp:
+                                    # Allow explicit verify commands against the owner's phrase
+                                    if lower.startswith("verify pass ") or lower.startswith("verify password "):
+                                        phrase = body.split(maxsplit=2)[2] if len(body.split(maxsplit=2)) == 3 else ""
+                                        ok = security_handlers.verify_phrase(owner.phone or from_number, phrase.strip()) if phrase else False
+                                        resp = MessagingResponse()
+                                        resp.message(f"Security check: {'Pass' if ok else 'Fail'}")
+                                        return Response(str(resp), mimetype="text/xml")
+                                    # Otherwise, prompt for verification and stop
+                                    resp = MessagingResponse()
+                                    resp.message("Please verify by replying: verify pass <your phrase>")
+                                    return Response(str(resp), mimetype="text/xml")
+            except Exception:
+                pass
+
             # Help / --help / -h
             if lower in ("help", "--help", "-h"):
                 try:
@@ -829,6 +908,18 @@ def init_app(app):
             # Auto-start onboarding on the onboarding number (unless also master)
             master_number = os.environ.get("MASTER_PHONE_NUMBER")
             if onboarding_number and to_number == onboarding_number and (not master_number or to_number != master_number):
+                # Ensure onboarding state is tagged with the onboarding line context
+                try:
+                    st = onboarding._get_state(from_number)  # type: ignore[attr-defined]
+                    if not st:
+                        onboarding._set_state(from_number, "ask_has_account", {"line": "onboarding"})  # type: ignore[attr-defined]
+                    else:
+                        import json as _json
+                        data = _json.loads((st.data or "{}"))
+                        if (data.get("line") or "") != "onboarding":
+                            onboarding._set_state(from_number, st.step, {**data, "line": "onboarding"})  # type: ignore[attr-defined]
+                except Exception:
+                    pass
                 cont = onboarding.handle_sms(from_number, body)
                 if cont:
                     resp = MessagingResponse()
@@ -836,7 +927,11 @@ def init_app(app):
                     return Response(str(resp), mimetype="text/xml")
                 if body.lower() not in ("pay", "subscribe") and body.lower() not in ("signup", "sign up", "onboard"):
                     # Kick off if not already in flow
-                    msg = onboarding.start(from_number)
+                    try:
+                        onboarding._set_state(from_number, "ask_has_account", {"line": "onboarding"})  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+                    msg = onboarding.voice_prompt("ask_has_account")
                     resp = MessagingResponse()
                     resp.message(msg)
                     return Response(str(resp), mimetype="text/xml")
@@ -882,6 +977,23 @@ def init_app(app):
                 msg = "Pass" if ok else "Fail"
                 resp = MessagingResponse()
                 resp.message(f"Security check: {msg}")
+                return Response(str(resp), mimetype="text/xml")
+
+            # Assigned number retrieval
+            if lower == "number":
+                try:
+                    from utils.models import User as U
+                    with db_session() as s:
+                        u = s.query(U).filter(U.phone == from_number).first()
+                        assigned = getattr(u, "assigned_number", None) if u else None
+                    if assigned:
+                        msg = f"Your assigned AICon number is: {assigned}"
+                    else:
+                        msg = "I couldn't find an assigned number for this phone yet. If you recently signed up, it may take a moment. Reply 'help' if you need support."
+                except Exception as exc:
+                    msg = f"Sorry, couldn't retrieve your assigned number: {exc}"
+                resp = MessagingResponse()
+                resp.message(msg)
                 return Response(str(resp), mimetype="text/xml")
 
             # Onboarding commands
@@ -1058,18 +1170,3 @@ def init_app(app):
     def onboard_unified() -> Response:
         # Alias endpoint used for onboarding number webhooks
         return twilio_unified()
-            # Enforce SMS security phrase on assigned user numbers if required
-            try:
-                require_sec = (os.environ.get("REQUIRE_SECURITY_FOR_ASSIGNED", "true").lower() == "true")
-                if require_sec and to_number:
-                    with db_session() as s:
-                        u = s.query(User).filter(User.assigned_number == to_number).first()
-                        if u and u.phone and (not master_number or to_number != master_number):
-                            from utils.models import SecurityPhrase
-                            sp = s.query(SecurityPhrase).filter(SecurityPhrase.phone == u.phone).first()
-                            if sp and not (lower.startswith("verify pass ") or lower.startswith("verify password ")):
-                                resp = MessagingResponse()
-                                resp.message("Please verify by replying: verify pass <your phrase>")
-                                return Response(str(resp), mimetype="text/xml")
-            except Exception:
-                pass

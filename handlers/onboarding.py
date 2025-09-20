@@ -89,14 +89,36 @@ def handle_sms(phone: str, body: str) -> Optional[str]:
         return None
     data = json.loads((st.data or "{}"))
     if st.step == "ask_has_account":
-        ans = (body or "").strip().lower()
-        if ans in ("yes", "y"):  # already has account
+        raw = (body or "").strip().lower()
+        ans = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in raw)
+        ans = " ".join(ans.split())
+        yes_tokens = {"yes", "y", "yeah", "yep", "yup", "sure", "affirmative"}
+        no_tokens = {"no", "n", "nope", "nah", "negative"}
+        if ans in {"1", "one"}:
+            match = "yes"
+        elif ans in {"2", "two"}:
+            match = "no"
+        else:
+            words = set(ans.split())
+            if words & yes_tokens or ans.startswith("y"):
+                match = "yes"
+            elif words & no_tokens or ans.startswith("n"):
+                match = "no"
+            else:
+                match = None
+
+        if match == "yes":  # already has account
+            if (data.get("line") or "") == "onboarding":
+                _set_state(phone, "ask_support", data)
+                return (
+                    "Great — since you already have an account, to speak with your AI assistant please call your individual assigned number you received when you signed up. "
+                    "Do you need help retrieving that number, or do you need other support? Reply 'number', 'support', or 'no'."
+                )
             _clear_state(phone)
             return (
-                "Great — you're all set. You can text 'pay' for a secure billing link, "
-                "or just start chatting. If you need help, reply 'help'."
+                "Great — you're all set. You can text 'pay' for a secure billing link, or just start chatting. Reply 'help' anytime."
             )
-        if ans in ("no", "n"):
+        if match == "no":
             _set_state(phone, "ask_name", data)
             return "Okay, let's create your account. What's your full name?"
         # Nudge if not understood
@@ -145,6 +167,30 @@ def handle_sms(phone: str, body: str) -> Optional[str]:
                 s.add(u)
         _clear_state(phone)
         return "All set! Reply 'pay' to get a billing link or say 'pay' on a call to pay by phone. Reply 'help' anytime for commands."
+    if st.step == "ask_support":
+        raw = (body or "").strip().lower()
+        ans = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in raw)
+        ans = " ".join(ans.split())
+        words = set(ans.split())
+        wants_number = ("number" in words) or ("assigned" in words) or ("retrieve" in words) or ans.startswith("num")
+        wants_support = ("support" in words) or ("help" in words) or ("agent" in words)
+        says_no = (ans in ("no", "nope", "nah", "n"))
+        if wants_number:
+            _clear_state(phone)
+            return (
+                "No problem. Reply 'number' from the phone you used when you signed up and I will text your assigned number back automatically. "
+                "If you prefer human help, reply 'help'."
+            )
+        if wants_support:
+            _clear_state(phone)
+            return (
+                "Okay. For support, reply 'help' and a teammate will follow up. "
+                "You can also ask me questions here."
+            )
+        if says_no:
+            _clear_state(phone)
+            return "Okay. Thanks for reaching out!"
+        return "Please reply 'number' for help retrieving your assigned number, 'support' for other help, or 'no'."
     return None
 
 
@@ -167,14 +213,49 @@ def handle_voice_input(phone: str, speech: str) -> str:
         return voice_prompt("ask_has_account")
     data = json.loads((st.data or "{}"))
     if st.step == "ask_has_account":
-        ans = (speech or "").strip().lower()
-        if ans in ("yes", "y", "yeah", "yep"):
+        raw = (speech or "").strip().lower()
+        # Normalize punctuation and whitespace
+        ans = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in raw)
+        ans = " ".join(ans.split())  # collapse spaces
+
+        # Accept common variants and DTMF 1/2
+        yes_tokens = {"yes", "y", "yeah", "yep", "yup", "sure", "correct", "affirmative"}
+        no_tokens = {"no", "n", "nope", "nah", "negative"}
+
+        # Direct digit mapping (e.g., pressing keys during <Gather>)
+        if ans in {"1", "one"}:
+            match = "yes"
+        elif ans in {"2", "two"}:
+            match = "no"
+        else:
+            # Token-based and prefix-based matching
+            words = set(ans.split())
+            if words & yes_tokens or ans.startswith("y"):
+                match = "yes"
+            elif words & no_tokens or ans.startswith("n"):
+                match = "no"
+            # Phrase hints like "i have an account" / "i do not"
+            elif "have" in words and "account" in words and ("do" in words or "i" in words):
+                match = "yes"
+            elif ("dont" in words or "do" in words and "not" in words) and "have" in words and "account" in words:
+                match = "no"
+            else:
+                match = None
+
+        if match == "yes":
+            # If the user called the onboarding line, steer them to use their assigned number
+            if (data.get("line") or "") == "onboarding":
+                _set_state(phone, "ask_support", data)
+                return (
+                    "Great — since you already have an account, to speak with your AI assistant please call your individual assigned number you received when you signed up. "
+                    "Do you need help retrieving that number, or do you need other support? You can say 'number', 'support', or 'no'."
+                )
             _clear_state(phone)
             return (
                 "Great — you're already set up. If you'd like to handle billing now, say pay. "
                 "Otherwise, ask me anything."
             )
-        if ans in ("no", "n", "nope"):
+        if match == "no":
             _set_state(phone, "ask_name", data)
             return voice_prompt("ask_name")
         return f"Please say yes or no about your {brand_cfg.name('AICon')} account."
@@ -219,4 +300,29 @@ def handle_voice_input(phone: str, speech: str) -> str:
                 s.add(u)
         _clear_state(phone)
         return "You're all set up. To pay now, say pay, or you can text pay for a link."
+    if st.step == "ask_support":
+        raw = (speech or "").strip().lower()
+        ans = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in raw)
+        ans = " ".join(ans.split())
+        words = set(ans.split())
+        # Simple routing: number retrieval, general support, or no
+        wants_number = ("number" in words) or ("assigned" in words) or ("retrieve" in words) or ans.startswith("num")
+        wants_support = ("support" in words) or ("help" in words) or ("agent" in words)
+        says_no = (ans in ("no", "nope", "nah", "n"))
+        if wants_number:
+            _clear_state(phone)
+            return (
+                "No problem. The quickest way to get your assigned number is to text the word 'number' to this line from the phone you used when you signed up, and you'll receive it automatically. "
+                "If you prefer human help, you can also text 'help'."
+            )
+        if wants_support:
+            _clear_state(phone)
+            return (
+                "Okay. For support, please text the word 'help' to this number and a teammate will follow up. "
+                "You can also ask me common questions here."
+            )
+        if says_no:
+            _clear_state(phone)
+            return "Okay. Thanks for calling!"
+        return "Please say 'number' for help retrieving your assigned number, 'support' for other help, or 'no'."
     return ""
